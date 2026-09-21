@@ -1,0 +1,66 @@
+import './ui/interface.css';
+import { makeWorld, STEP } from './physics/world';
+import { Bicycle, type RideInput } from './physics/bicycle';
+import { View } from './render/app';
+import { Input, readSettings, saveSettings } from './input';
+import { Menu } from './ui/menu';
+import { RideAudio } from './audio';
+
+async function boot(){
+  const canvas=document.querySelector<HTMLCanvasElement>('#game')!;
+  const settings=readSettings(),input=new Input(canvas,settings),menu=new Menu(settings,input);
+  const {world,props}=await makeWorld();
+  const bike=new Bicycle(world),view=new View(canvas,props),audio=new RideAudio();
+  await view.bicycle.rider.ready;
+  let accumulator=0,last=performance.now(),fps=60,pausedByContext=false;
+  // Settle onto a planted left foot before the first frame; there is no hidden stand.
+  for(let i=0;i<180;i++){bike.step(input.read());world.step();bike.afterStep();}
+  menu.onStart=()=>{last=performance.now();accumulator=0;void audio.start();};
+  menu.onPause=()=>{accumulator=0;};
+  const reset=(start:boolean)=>{bike.reset(start);input.steer=0;input.clear();input.look=.40;accumulator=0;};
+  menu.onReset=reset;
+  input.onAction=action=>{
+    if(action==='pause'){if(menu.helpOpen)menu.dismissHelp();else menu.pause();return;}
+    if(action==='help'){menu.toggleHelp();return;}
+    if(action==='leftFoot')bike.toggleFoot(0);
+    if(action==='rightFoot')bike.toggleFoot(1);
+    if(action==='reset')reset(false);
+    if(action==='debug')menu.toggleDebug();
+    if(action==='camera'){settings.camera=settings.camera==='first'?'third':'first';saveSettings(settings);const sel=document.querySelector<HTMLSelectElement>('#camera');if(sel)sel.value=settings.camera;}
+  };
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)menu.pause();});
+  canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();pausedByContext=true;menu.pause();menu.toast('画面暂时中断，正在等待图形设备恢复。');});
+  canvas.addEventListener('webglcontextrestored',()=>{pausedByContext=false;view.resize();menu.toast('画面已恢复，可以继续骑行。');});
+  menu.ready();
+  function animate(now:number){
+    requestAnimationFrame(animate);
+    const dt=Math.min((now-last)/1000,.06);last=now;fps+=(1/Math.max(dt,.001)-fps)*.04;
+    if(menu.playing&&!pausedByContext){
+      accumulator+=dt;const control=input.read();
+      while(accumulator>=STEP){bike.step(control);world.step();bike.afterStep();accumulator-=STEP;}
+    }
+    audio.update(bike,settings.volume,menu.playing);
+    menu.updateDebug(bike,fps);
+    if(!pausedByContext)view.draw(bike,props,settings.camera,input.lookAngle(),menu.menuVisible,dt);
+  }
+  requestAnimationFrame(animate);
+  // Read-only diagnostics in ordinary builds. Deterministic stepping only under explicit QA query.
+  Object.assign(window,{bicycleDiagnostics:{snapshot:()=>bike.snapshot(),renderer:()=>({...view.renderer.info.render}),rider:()=>view.bicycle.rider.diagnostics(),input:()=>({...input.read(),touch:input.touchMode}),ready:true}});
+  if(new URLSearchParams(location.search).has('test')){
+    Object.assign(window,{bicycleTest:{
+      snapshot:()=>bike.snapshot(),reset:(start=true)=>reset(start),pause:()=>menu.pause(),
+      step:(count:number,control:RideInput)=>{for(let i=0;i<count;i++){bike.step(control);world.step();bike.afterStep();}return bike.snapshot();},
+      setFeet:(l:boolean,r:boolean)=>{bike.feet=[l,r];},
+      show:()=>view.draw(bike,props,settings.camera,input.lookAngle(),false,1/60),
+    }});
+  }
+}
+boot().catch(error=>{
+  console.error(error);
+  const ui=document.querySelector('#ui')!;
+  const panel=document.createElement('section');panel.className='panel';panel.style.pointerEvents='auto';
+  const heading=document.createElement('h2');heading.textContent='练习场未能载入';
+  const p=document.createElement('p');p.textContent='请使用支持 WebGL 2 的桌面浏览器，并确认浏览器已开启硬件加速。';
+  const button=document.createElement('button');button.className='primary compact';button.textContent='重新加载';button.onclick=()=>location.reload();
+  panel.append(heading,p,button);ui.replaceChildren(panel);
+});

@@ -1,0 +1,10 @@
+node_modules/
+dist/
+test-results/
+*.log
+*.blend1
+*.blend2
+assets/rider/*.raw.glb
+.env
+.env.*
+release/
