@@ -12,7 +12,8 @@
     "test:mobile": "node tests/mobile.mjs",
     "model:optimize": "gltf-transform optimize assets/rider/rider.raw.glb public/models/rider.glb --compress meshopt --flatten false --join false --simplify false --palette false",
     "model:validate": "gltf-transform validate public/models/rider.glb",
-    "test:production": "node tests/production.mjs"
+    "test:production": "node tests/production.mjs",
+    "test:comfort": "node tests/comfort.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.0",

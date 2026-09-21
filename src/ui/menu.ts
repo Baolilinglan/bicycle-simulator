@@ -1,9 +1,10 @@
-import { Input, keyLabel, saveSettings, type Action, type Settings } from '../input';
+import { Input, defaultBindings, keyLabel, saveSettings, type Action, type Settings } from '../input';
 import { Bicycle } from '../physics/bicycle';
 import { TouchControls } from './touch';
+import { difficulties, type Difficulty } from '../difficulty';
 
 const labels:Record<Action,string>={leftPedal:'左脚踩踏 / 蹬地',rightPedal:'右脚踩踏 / 蹬地',leanLeft:'重心向左',leanRight:'重心向右',
-  forward:'重心向前',back:'重心向后',leftFoot:'左脚落地 / 收脚',rightFoot:'右脚落地 / 收脚',camera:'切换视角',reset:'重新摆正',debug:'物理调试',look:'低头看踏板',help:'按键提示'};
+  forward:'重心向前',back:'重心向后',leftFoot:'左脚落地 / 收脚',rightFoot:'右脚落地 / 收脚',camera:'切换视角',reset:'重新摆正',debug:'物理调试',look:'低头看踏板',help:'按键提示',frontBrake:'前刹车',rearBrake:'后刹车',pause:'暂停',steerLeft:'车把向左（可选）',steerRight:'车把向右（可选）',lookUp:'抬头（可选）',lookDown:'低头（可选）'};
 
 export class Menu {
   playing=false;started=false;debug=false;
@@ -14,6 +15,8 @@ export class Menu {
   onStart:()=>void=()=>{};
   onReset:(start:boolean)=>void=()=>{};
   onPause:()=>void=()=>{};
+  onDifficulty:()=>void=()=>{};
+  onSettingsChange:()=>void=()=>{};
   private debugElement:HTMLElement;
   constructor(public settings:Settings,public input:Input){
     this.root=document.querySelector('#ui')!;
@@ -22,6 +25,7 @@ export class Menu {
         <div class="menu-shade"></div>
         <section class="welcome" id="welcome" aria-label="自行车模拟器主菜单">
           <h1>自行车</h1>
+          <div class="difficulty-picker"><label for="welcome-difficulty">骑行难度</label><select id="welcome-difficulty" aria-describedby="welcome-difficulty-caption"></select><p id="welcome-difficulty-caption"></p></div>
           <div class="menu-actions">
             <button class="primary" id="start" disabled><span>正在准备练习场</span><span aria-hidden="true">↗</span></button>
             <button class="text-button" id="open-controls">操作方式 <span aria-hidden="true">＋</span></button>
@@ -45,16 +49,21 @@ export class Menu {
         <section class="panel settings-panel" id="settings-panel" hidden aria-label="设置">
           <button class="close" data-close aria-label="关闭设置">×</button>
           <h2>设置</h2>
+          <label class="setting-row" for="difficulty"><span>骑行难度</span><select id="difficulty" aria-describedby="difficulty-caption"></select></label><p class="setting-note" id="difficulty-caption"></p>
           <label class="setting-row" for="sensitivity"><span>鼠标灵敏度</span><output id="sensitivity-value"></output><input id="sensitivity" type="range" min="0.2" max="2.5" step="0.05"></label>
-          <label class="setting-row" for="volume"><span>音量</span><output id="volume-value"></output><input id="volume" type="range" min="0" max="1" step="0.05"></label>
+          <label class="setting-row" for="volume"><span>音效音量</span><output id="volume-value"></output><input id="volume" type="range" min="0" max="1" step="0.05"></label>
+          <label class="setting-row" for="music-enabled"><span>背景音乐</span><input id="music-enabled" type="checkbox" role="switch"></label>
+          <label class="setting-row" for="music-volume"><span>音乐音量</span><output id="music-volume-value"></output><input id="music-volume" type="range" min="0" max="1" step="0.05"></label>
+          <p class="music-track">Keep It Straight</p>
           <label class="setting-row" for="camera"><span>视角</span><select id="camera"><option value="first">第一人称</option><option value="third">第三人称</option></select></label>
           <div class="reset-actions"><button id="upright">重新摆正自行车</button><button id="reset-position">回到起点</button></div>
-          <details><summary>键位设置</summary><div id="bindings" class="bindings"></div></details>
+          <details><summary>键位设置</summary><p class="setting-note">点击动作右侧，再按键盘或鼠标按键。重复绑定会交换。Delete 清除，Esc 取消；Esc 始终可暂停。</p><div id="bindings" class="bindings"></div><button id="reset-bindings" class="text-button">恢复默认键位</button></details>
         </section>
       </main>
       <nav id="ride-tools" hidden aria-label="骑行工具"><button id="ride-help" aria-label="显示按键提示">操作</button><button id="ride-camera" class="touch-only" aria-label="切换视角">视角</button><button id="ride-reset" class="touch-only" aria-label="原地摆正">摆正</button><button id="ride-pause" aria-label="暂停游戏">暂停</button></nav>
       <div id="help-layer" hidden><section class="help-dialog" role="dialog" aria-modal="true" aria-labelledby="help-title"><h2 id="help-title">按键提示</h2><div id="help-grid"></div><p class="help-start" id="help-start"></p><button id="dismiss-help" class="primary">知道了，开始骑行 <span aria-hidden="true">↗</span></button></section></div>
       <div id="orientation"><span class="rotate-phone" aria-hidden="true"></span><h2>请将设备横过来</h2><p>横屏后即可骑行</p></div>
+      <div id="speedometer" hidden aria-label="当前速度"><output id="speed-value">0.0</output><span>km/h</span></div>
       <pre id="debug" hidden aria-label="物理调试信息"></pre>
       <div id="toast" role="status" hidden></div>
     `;
@@ -86,6 +95,16 @@ export class Menu {
     const camera=this.root.querySelector<HTMLSelectElement>('#camera')!;camera.value=settings.camera;
     camera.onchange=()=>{settings.camera=camera.value as Settings['camera'];this.updateSettings();};
     this.click('upright',()=>{this.onReset(false);this.start();});this.click('reset-position',()=>{this.onReset(true);this.start();});
+    for(const id of ['welcome-difficulty','difficulty']){
+      const select=this.root.querySelector<HTMLSelectElement>('#'+id)!;
+      for(const [value,d] of Object.entries(difficulties)){const option=document.createElement('option');option.value=value;option.textContent=d.name;select.append(option);}
+      select.onchange=()=>{settings.difficulty=select.value as Difficulty;this.onDifficulty();this.updateSettings();};
+    }
+    const musicVolume=this.root.querySelector<HTMLInputElement>('#music-volume')!;musicVolume.value=String(settings.musicVolume);
+    musicVolume.oninput=()=>{settings.musicVolume=Number(musicVolume.value);this.updateSettings();};
+    const musicEnabled=this.root.querySelector<HTMLInputElement>('#music-enabled')!;musicEnabled.checked=settings.musicEnabled;
+    musicEnabled.onchange=()=>{settings.musicEnabled=musicEnabled.checked;this.updateSettings();};
+    this.click('reset-bindings',()=>{this.input.clear();this.input.onRebind=null;settings.bindings={...defaultBindings};this.updateSettings();this.renderBindings();});
     this.renderBindings();this.updateSettings();
   }
   ready(){const b=this.root.querySelector<HTMLButtonElement>('#start')!;b.disabled=false;b.querySelector('span')!.textContent='开始骑行';}
@@ -112,16 +131,17 @@ export class Menu {
   toggleHelp(){if(this.helpOpen)this.dismissHelp();else this.openHelp();}
   private fillHelp(){
     const k=(a:Action)=>keyLabel(this.settings.bindings[a]);
+    const steering=['鼠标',...(['steerLeft','steerRight','lookUp','lookDown'] as Action[]).filter(a=>this.settings.bindings[a]).map(k)].join(' / ');
     const items=this.input.touchMode?[
       ['左踏 / 右踏','交替踩踏，落地时蹬地'],['左脚 / 右脚','切换落脚与收脚'],['左侧圆盘','移动身体重心'],['右侧圆盘','左右转把，上下看路'],['前刹 / 后刹','按住刹车，可同时操作'],['顶部按钮','视角、摆正与暂停'],
     ]:[
       [`${k('leftPedal')} / ${k('rightPedal')}`,'左右脚踩踏 / 蹬地'],[`${k('leftFoot')} / ${k('rightFoot')}`,'左右脚落地 / 收脚'],
-      [`${k('leanLeft')} ${k('leanRight')} · ${k('forward')} ${k('back')}`,'左右 / 前后重心'],['鼠标左右 / 上下','车把 / 视线'],
-      ['鼠标左键 / 右键','前刹 / 后刹'],[`${k('reset')} · ${k('camera')} · ${k('help')}`,'摆正 · 视角 · 提示'],
+      [`${k('leanLeft')} ${k('leanRight')} · ${k('forward')} ${k('back')}`,'左右 / 前后重心'],[steering,'车把 / 视线'],
+      [`${k('frontBrake')} / ${k('rearBrake')}`,'前刹 / 后刹'],[`${k('reset')} · ${k('camera')} · ${k('help')}`,'摆正 · 视角 · 提示'],
     ];
     const grid=this.root.querySelector('#help-grid')!;grid.replaceChildren();
     for(const [key,label] of items){const row=document.createElement('div'),keys=document.createElement('kbd'),text=document.createElement('span');keys.textContent=key;text.textContent=label;row.append(keys,text);grid.append(row);}
-    this.root.querySelector('#help-start')!.textContent=this.input.touchMode?'起步：左踏蹬地，右踏发力，再收左脚。支持多指同时操作。':`起步：${k('leftPedal')} 蹬地，${k('rightPedal')} 发力，再按 ${k('leftFoot')} 收左脚。Esc 暂停。`;
+    this.root.querySelector('#help-start')!.textContent=difficulties[this.settings.difficulty].help+' '+(this.settings.difficulty!=='extreme'?'':this.input.touchMode?'起步：左踏蹬地，右踏发力，再收左脚。支持多指同时操作。':`起步：${k('leftPedal')} 蹬地，${k('rightPedal')} 发力，再按 ${k('leftFoot')} 收左脚。Esc 暂停。`);
   }
   pause(){
     if(!this.playing&&!this.helpOpen)return;
@@ -139,27 +159,39 @@ export class Menu {
   private updateSettings(){
     this.root.querySelector('#sensitivity-value')!.textContent=this.settings.sensitivity.toFixed(2);
     this.root.querySelector('#volume-value')!.textContent=Math.round(this.settings.volume*100)+'%';
-    saveSettings(this.settings);
+    this.root.querySelector('#music-volume-value')!.textContent=Math.round(this.settings.musicVolume*100)+'%';
+    const d=difficulties[this.settings.difficulty];
+    for(const id of ['welcome-difficulty','difficulty'])this.root.querySelector<HTMLSelectElement>('#'+id)!.value=this.settings.difficulty;
+    this.root.querySelector('#welcome-difficulty-caption')!.textContent=d.caption;
+    this.root.querySelector('#difficulty-caption')!.textContent=d.caption+'。切换后原地重新摆正。';
+    saveSettings(this.settings);this.onSettingsChange();
     const b=this.settings.bindings,k=(a:Action)=>keyLabel(b[a]);
     this.root.querySelector('#pedal-keys')!.textContent=`${k('leftPedal')} / ${k('rightPedal')}`;
     this.root.querySelector('#body-keys')!.textContent=`${k('leanLeft')} ${k('leanRight')} / ${k('forward')} ${k('back')}`;
     this.root.querySelector('#foot-keys')!.textContent=`${k('leftFoot')} / ${k('rightFoot')}`;
     this.root.querySelector('#look-keys')!.textContent=`${k('look')} 低头 · ${k('reset')} 摆正 · ${k('camera')} 视角`;
-    this.root.querySelector('#start-tip-text')!.textContent=`左脚已伸出。先等脚着地，轻按 ${k('leftPedal')} 蹬地，同时用 ${k('rightPedal')} 踩下右踏板。用 ${k('leftFoot')} 收起左脚，再交替 ${k('leftPedal')} / ${k('rightPedal')} 踩踏。停车前再次伸脚支撑。`;
+    this.root.querySelectorAll('.control-grid .keys')[4].textContent=`${k('frontBrake')} / ${k('rearBrake')}`;
+    this.root.querySelectorAll('.control-grid .keys')[1].textContent=['鼠标左右',...(['steerLeft','steerRight'] as Action[]).filter(a=>b[a]).map(k)].join(' / ');
+    if(this.input.touchMode){
+      const texts=['左踏 / 右踏','右侧圆盘左右滑动','左侧重心圆盘','左脚 / 右脚','前刹 / 后刹','右侧圆盘上下滑动 · 顶部视角 / 摆正'];
+      this.root.querySelectorAll('.control-grid .keys').forEach((el,i)=>el.textContent=texts[i]);
+    }
+    this.root.querySelector('#start-tip-text')!.textContent=this.settings.difficulty!=='extreme'?d.help:`左脚已伸出。先等脚着地，轻按 ${k('leftPedal')} 蹬地，同时用 ${k('rightPedal')} 踩下右踏板。用 ${k('leftFoot')} 收起左脚，再交替 ${k('leftPedal')} / ${k('rightPedal')} 踩踏。停车前再次伸脚支撑。`;
   }
   private renderBindings(){
     const el=this.root.querySelector('#bindings')!;el.replaceChildren();
     for(const action of Object.keys(labels) as Action[]){
       const row=document.createElement('div');const label=document.createElement('span');label.textContent=labels[action];
       const button=document.createElement('button');button.textContent=keyLabel(this.settings.bindings[action]);button.setAttribute('aria-label',`修改${labels[action]}键位`);
-      button.onclick=()=>{el.querySelectorAll('button').forEach((b,i)=>{b.textContent=keyLabel(this.settings.bindings[(Object.keys(labels) as Action[])[i]]);});button.textContent='按下按键…';this.input.onRebind=code=>{
+      button.onclick=()=>{el.querySelectorAll('button').forEach((b,i)=>{b.textContent=keyLabel(this.settings.bindings[(Object.keys(labels) as Action[])[i]]);});button.textContent='按键或鼠标…';button.classList.add('awaiting');this.input.onRebind=code=>{
         if(code==='Escape'){this.renderBindings();return;}
-        const reserved=['Escape','Tab','MetaLeft','MetaRight','ControlLeft','ControlRight','AltLeft','AltRight'];
+        if(code==='Delete'||code==='Backspace'){this.settings.bindings[action]='';this.input.clear();this.updateSettings();this.renderBindings();return;}
+        const reserved=['Escape','Tab','MetaLeft','MetaRight'];
         if(reserved.includes(code)){this.toast('这个按键由浏览器使用，请选择其他按键。');this.renderBindings();return;}
         const old=this.settings.bindings[action];
         const duplicate=(Object.keys(labels) as Action[]).find(a=>a!==action&&this.settings.bindings[a]===code);
         if(duplicate)this.settings.bindings[duplicate]=old;
-        this.settings.bindings[action]=code;this.updateSettings();this.renderBindings();
+        this.settings.bindings[action]=code;this.input.clear();this.updateSettings();this.renderBindings();
       };};
       row.append(label,button);el.append(row);
     }
@@ -167,6 +199,9 @@ export class Menu {
   toggleDebug(){this.debug=!this.debug;this.debugElement.hidden=!this.debug;}
   updateDebug(b:Bicycle,fps:number){
     this.root.querySelector<HTMLElement>('#ride-tools')!.hidden=!this.playing;
+    this.root.querySelector<HTMLElement>('#speedometer')!.hidden=!this.playing;
+    const speed=this.root.querySelector<HTMLOutputElement>('#speed-value')!;const value=(Math.hypot(b.body.linvel().x,b.body.linvel().z)*3.6).toFixed(1);
+    if(speed.value!==value)speed.value=value;
     this.touch.update(this.playing&&this.input.touchMode,b);
     this.debugElement.hidden=!this.debug||!this.playing;
     if(!this.debug)return;

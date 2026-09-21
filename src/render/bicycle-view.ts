@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Bicycle, BIKE } from '../physics/bicycle';
+import { Bicycle, BIKE, TRAINING } from '../physics/bicycle';
 import { quat, vec } from '../physics/world';
 import { Rider } from './rider';
 
@@ -22,6 +22,8 @@ export class BicycleView {
   frontWheel=new THREE.Group();
   cranks=new THREE.Group();
   pedals:THREE.Mesh[]=[];
+  training=new THREE.Group();
+  supportWheels:THREE.Group[]=[];
   rider:Rider;
   constructor(public scene:THREE.Scene) {
     scene.add(this.root);
@@ -60,6 +62,17 @@ export class BicycleView {
       rod(this.cranks,v(side*.08,0,0),v(side*.17,-Math.sin(angle)*BIKE.crank,Math.cos(angle)*BIKE.crank),.012,m);
       const p=mesh(new THREE.BoxGeometry(.105,.025,.075),palette.rubber,this.root);this.pedals.push(p);
     }
+    this.root.add(this.training);
+    for(const sign of [1,-1]){
+      const axle=v(sign*TRAINING.spread,TRAINING.height,TRAINING.z);
+      rod(this.training,v(sign*.07,.345,-.58),v(sign*.36,.28,TRAINING.z),.016,m);
+      rod(this.training,v(sign*.36,.28,TRAINING.z),axle,.016,m);
+      const support=new THREE.Group();support.position.copy(axle);this.training.add(support);this.supportWheels.push(support);
+      const tire=mesh(new THREE.TorusGeometry(TRAINING.radius-.018,.018,8,32),palette.rubber,support);tire.rotation.y=Math.PI/2;
+      const hub=mesh(new THREE.CylinderGeometry(.08,.08,.026,24),f,support);hub.rotation.z=Math.PI/2;
+      rod(support,v(-.033,0,0),v(.033,0,0),.02,m);
+      for(let n=0;n<5;n++){const a=n*Math.PI*.4;rod(support,v(sign*.02,0,0),v(sign*.02,Math.sin(a)*.073,Math.cos(a)*.073),.004,m);}
+    }
     this.rider=new Rider(this.root);
   }
   private makeWheel(group:THREE.Group) {
@@ -77,6 +90,8 @@ export class BicycleView {
     this.front.rotation.y=bike.steer;
     this.rearWheel.rotation.x=bike.wheels[0].angle;this.frontWheel.rotation.x=bike.wheels[1].angle;
     this.cranks.rotation.x=bike.crankAngle;
+    this.training.visible=bike.difficulty==='training';
+    this.supportWheels.forEach((w,i)=>w.rotation.x=bike.trainingWheels[i].angle);
     const feet:THREE.Vector3[]=[],hands:THREE.Vector3[]=[];
     for(let i=0;i<2;i++) {
       const side=i===0?1:-1, a=bike.crankAngle+i*Math.PI;

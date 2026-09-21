@@ -45,10 +45,13 @@ await page.screenshot({path:'test-results/mobile-portrait.png'});
 for(const [width,height] of [[568,320],[667,375],[844,390],[1024,768]]){
   await page.setViewportSize({width,height});await page.waitForTimeout(160);
   assert.equal(await page.locator('#orientation').isVisible(),false);
+  const menuBox=await page.locator('.welcome').boundingBox();assert.ok(menuBox.y>=0&&menuBox.y+menuBox.height<=height+1,'main menu must fit');
+  if(width===568)await page.screenshot({path:'test-results/mobile-small-menu.png'});
   await page.locator('#start').tap();await page.waitForTimeout(150);
-  for(const selector of ['.body-stick','.steer-stick','.touch-middle','#ride-tools']){
+  for(const selector of ['.body-stick','.steer-stick','.touch-middle','#ride-tools','#speedometer']){
     const b=await page.locator(selector).boundingBox();assert.ok(b.x>=0&&b.y>=0&&b.x+b.width<=width+1&&b.y+b.height<=height+1,`${selector} must fit ${width}x${height}`);
   }
+  const speed=await page.locator('#speedometer').boundingBox(),tools=await page.locator('#ride-tools').boundingBox();assert.ok(speed.x+speed.width<tools.x,'speed and toolbar must not overlap');
   await page.screenshot({path:`test-results/mobile-${width}x${height}.png`});
   await page.locator('#ride-pause').tap();
 }

@@ -10,13 +10,16 @@ async function boot(){
   const canvas=document.querySelector<HTMLCanvasElement>('#game')!;
   const settings=readSettings(),input=new Input(canvas,settings),menu=new Menu(settings,input);
   const {world,props}=await makeWorld();
-  const bike=new Bicycle(world),view=new View(canvas,props),audio=new RideAudio();
+  const bike=new Bicycle(world,settings.difficulty),view=new View(canvas,props),audio=new RideAudio();
   await view.bicycle.rider.ready;
   let accumulator=0,last=performance.now(),fps=60,pausedByContext=false;
   // Settle onto a planted left foot before the first frame; there is no hidden stand.
   for(let i=0;i<180;i++){bike.step(input.read());world.step();bike.afterStep();}
-  menu.onStart=()=>{last=performance.now();accumulator=0;void audio.start();};
-  menu.onPause=()=>{accumulator=0;};
+  menu.onStart=()=>{last=performance.now();accumulator=0;void audio.start(settings).catch(()=>menu.toast('声音暂未启动，请暂停后继续骑行。'));};
+  menu.onPause=()=>{accumulator=0;audio.pause();};
+  menu.onSettingsChange=()=>audio.setMusic(settings,menu.playing);
+  menu.onDifficulty=()=>{bike.setDifficulty(settings.difficulty);input.clear();input.steer=0;accumulator=0;};
+  audio.onMusicError=()=>menu.toast('音乐暂时无法播放，骑行仍可继续。');
   const reset=(start:boolean)=>{bike.reset(start);input.steer=0;input.clear();input.look=.40;accumulator=0;};
   menu.onReset=reset;
   input.onAction=action=>{
@@ -36,7 +39,7 @@ async function boot(){
     requestAnimationFrame(animate);
     const dt=Math.min((now-last)/1000,.06);last=now;fps+=(1/Math.max(dt,.001)-fps)*.04;
     if(menu.playing&&!pausedByContext){
-      accumulator+=dt;const control=input.read();
+      input.advance(dt);accumulator+=dt;const control=input.read();
       while(accumulator>=STEP){bike.step(control);world.step();bike.afterStep();accumulator-=STEP;}
     }
     audio.update(bike,settings.volume,menu.playing);
@@ -45,7 +48,7 @@ async function boot(){
   }
   requestAnimationFrame(animate);
   // Read-only diagnostics in ordinary builds. Deterministic stepping only under explicit QA query.
-  Object.assign(window,{bicycleDiagnostics:{snapshot:()=>bike.snapshot(),renderer:()=>({...view.renderer.info.render}),rider:()=>view.bicycle.rider.diagnostics(),input:()=>({...input.read(),touch:input.touchMode}),ready:true}});
+  Object.assign(window,{bicycleDiagnostics:{snapshot:()=>bike.snapshot(),renderer:()=>({...view.renderer.info.render}),rider:()=>view.bicycle.rider.diagnostics(),input:()=>({...input.read(),touch:input.touchMode}),music:()=>audio.diagnostics(),trainingVisible:()=>view.bicycle.training.visible,ready:true}});
   if(new URLSearchParams(location.search).has('test')){
     Object.assign(window,{bicycleTest:{
       snapshot:()=>bike.snapshot(),reset:(start=true)=>reset(start),pause:()=>menu.pause(),

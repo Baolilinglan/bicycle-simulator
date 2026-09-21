@@ -1,6 +1,7 @@
 import { Bicycle } from './physics/bicycle';
+import type { Settings } from './input';
 
-/** Small procedural mechanical sounds, all muted while paused. No external audio downloads. */
+/** Mechanical audio and a separately mixed local BGM track, paused with the simulation. */
 export class RideAudio {
   private ctx?:AudioContext;
   private master?:GainNode;
@@ -12,7 +13,16 @@ export class RideAudio {
   private nextClick=0;
   private lastCrank=0;
   private lastImpact=0;
-  async start(){
+  private music=new Audio(`${import.meta.env.BASE_URL}audio/keep-it-straight.mp3`);
+  private musicGain?:GainNode;
+  private musicWanted=false;
+  private musicFailure='';
+  onMusicError:()=>void=()=>{};
+  constructor(){
+    this.music.loop=true;this.music.preload='metadata';
+    this.music.addEventListener('error',()=>{this.musicFailure='load';this.onMusicError();});
+  }
+  async start(settings:Settings){
     if(!this.ctx){
       const ctx=this.ctx=new AudioContext();this.master=ctx.createGain();this.master.gain.value=0;this.master.connect(ctx.destination);
       const length=ctx.sampleRate*2,buffer=ctx.createBuffer(1,length,ctx.sampleRate),data=buffer.getChannelData(0);
@@ -26,9 +36,30 @@ export class RideAudio {
       this.brakeTone=ctx.createOscillator();this.brakeTone.type='sine';this.brakeTone.frequency.value=680;
       this.brake=ctx.createGain();this.brake.gain.value=0;this.brakeTone.connect(this.brake).connect(this.master);
       source.start();this.brakeTone.start();
+      this.musicGain=ctx.createGain();this.musicGain.gain.value=0;
+      ctx.createMediaElementSource(this.music).connect(this.musicGain).connect(ctx.destination);
     }
-    await this.ctx.resume();
+    // Both resume and play originate in the user's gesture, including mobile Safari.
+    const resumed=this.ctx.resume();this.setMusic(settings,true);
+    await resumed;
   }
+  setMusic(settings:Settings,playing:boolean){
+    this.musicWanted=playing&&settings.musicEnabled&&settings.musicVolume>0;
+    if(this.ctx&&this.musicGain)this.musicGain.gain.setTargetAtTime(this.musicWanted?settings.musicVolume:0,this.ctx.currentTime,.1);
+    if(!this.musicWanted){this.music.pause();return;}
+    if(!this.musicGain||!this.music.paused)return;
+    void this.music.play().then(()=>{
+      this.musicFailure='';if(!this.musicWanted)this.music.pause();
+    }).catch(error=>{
+      if(error.name==='AbortError')return;
+      this.musicFailure=error.name;this.onMusicError();
+    });
+  }
+  pause(){
+    this.musicWanted=false;this.music.pause();
+    if(this.ctx){this.master?.gain.setTargetAtTime(0,this.ctx.currentTime,.04);this.musicGain?.gain.setTargetAtTime(0,this.ctx.currentTime,.04);}
+  }
+  diagnostics(){return {paused:this.music.paused,time:this.music.currentTime,duration:Number.isFinite(this.music.duration)?this.music.duration:0,ready:this.music.readyState,error:this.musicFailure,loop:this.music.loop,volume:this.musicGain?.gain.value??0};}
   update(b:Bicycle,volume:number,playing:boolean){
     if(!this.ctx||!this.master)return;const now=this.ctx.currentTime,speed=Math.abs(b.speed);
     this.master.gain.setTargetAtTime(playing?volume:0,now,.05);

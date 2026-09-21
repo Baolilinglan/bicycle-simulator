@@ -1,6 +1,7 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import { Quaternion, Vector3 } from 'three';
 import { clamp, quat, STEP, vec } from './world';
+import type { Difficulty } from '../difficulty';
 
 export interface RideInput {
   leftPedal: boolean; rightPedal: boolean;
@@ -9,6 +10,7 @@ export interface RideInput {
 }
 export const idleInput = (): RideInput => ({leftPedal:false,rightPedal:false,lean:0,fore:0,steer:0,frontBrake:false,rearBrake:false});
 export const BIKE = { radius: 0.345, wheelbase: 1.16, mass: 86, gear: 1.85, crank: 0.17 };
+export const TRAINING = { radius:.115, spread:.46, height:.119, z:-.49 };
 const IDENTITY = {x:0,y:0,z:0,w:1};
 const UP = new Vector3(0,1,0);
 
@@ -18,7 +20,7 @@ export interface WheelState {
 }
 const wheel = (): WheelState => ({omega:0,angle:0,load:0,slip:0,contact:false,point:new Vector3(),center:new Vector3()});
 
-/** Six unconstrained degrees of freedom. No upright target or angle correction exists.
+/** Six unconstrained degrees of freedom. Extreme difficulty has no balance assistance.
  * Tire impulses act at two contact patches; gravity acts at the rider's moving COM.
  * Wheels use scalar rotational inertia and a unilateral chain/freewheel constraint.
  */
@@ -42,12 +44,16 @@ export class Bicycle {
   time = 0;
   ragdoll: RAPIER.RigidBody[] = [];
   ragdollJoints: RAPIER.ImpulseJoint[] = [];
+  trainingWheels = [wheel(),wheel()];
+  private trainingColliders:RAPIER.Collider[]=[];
+  private pushBuffer=[0,0];
+  private pushSpent=[false,false];
   private previousPedals = [false,false];
   private lastSpeed = 0;
   private previousVelocity = new Vector3();
   private fallColliders: RAPIER.Collider[] = [];
   private frontHull!: RAPIER.Collider;
-  constructor(public world: RAPIER.World) {
+  constructor(public world: RAPIER.World,public difficulty:Difficulty='extreme') {
     this.body = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic()
       .setCanSleep(false).setCcdEnabled(true).setLinearDamping(0.012).setAngularDamping(0.12)
       .setAdditionalMassProperties(BIKE.mass,{x:0,y:0.82,z:-0.06},{x:17,y:12,z:9},IDENTITY));
@@ -64,7 +70,20 @@ export class Bicycle {
         .setTranslation(0,BIKE.radius,z).setDensity(0).setFriction(.35),this.body);
       if(z>0)this.frontHull=hull;
     }
-    this.reset();
+    this.configureTrainingWheels();this.reset();
+  }
+  setDifficulty(difficulty:Difficulty){
+    if(this.difficulty===difficulty)return;
+    this.difficulty=difficulty;this.configureTrainingWheels();this.reset(false);
+  }
+  private configureTrainingWheels(){
+    for(const c of this.trainingColliders)this.world.removeCollider(c,true);
+    this.trainingColliders=[];
+    if(this.difficulty!=='training')return;
+    for(const side of [-1,1])this.trainingColliders.push(this.world.createCollider(
+      RAPIER.ColliderDesc.cylinder(.022,TRAINING.radius-.025)
+        .setRotation(new Quaternion().setFromAxisAngle(new Vector3(0,0,1),Math.PI/2))
+        .setTranslation(side*TRAINING.spread,TRAINING.height,TRAINING.z).setDensity(0).setFriction(.5),this.body));
   }
   reset(atStart = true) {
     const p = vec(this.body.translation());
@@ -84,11 +103,12 @@ export class Bicycle {
     this.body.setRotation(rot,true);
     this.body.setLinvel({x:0,y:0,z:0},true); this.body.setAngvel({x:0,y:0,z:0},true);
     this.body.resetForces(true); this.body.resetTorques(true);
-    this.wheels = [wheel(),wheel()]; this.feet = [true,false];
+    this.wheels = [wheel(),wheel()];this.trainingWheels=[wheel(),wheel()];this.feet=this.difficulty==='training'?[false,false]:[true,false];
     this.footContacts=[false,false]; this.pushes=[0,0]; this.previousPedals=[false,false];
     this.crankAngle=Math.PI; this.crankOmega=0; this.steer=0; this.steerRate=0;
     this.bodyX=0; this.bodyZ=0; this.fallen=false; this.speed=0; this.lastSpeed=0;
     this.pedalForces=[0,0]; this.brakes=[0,0]; this.impact=0; this.previousVelocity.set(0,0,0);
+    this.pushBuffer=[0,0];this.pushSpent=[false,false];this.acceleration=0;
   }
   toggleFoot(side:number) { if(!this.fallen) this.feet[side] = !this.feet[side]; }
   localToWorld(v:Vector3) { return v.applyQuaternion(quat(this.body.rotation())).add(vec(this.body.translation())); }
@@ -124,14 +144,35 @@ export class Bicycle {
     const rollRate=vec(this.body.angvel()).dot(forward);
     this.body.addTorque(forward.clone().multiplyScalar(-rollRate*(1.5+Math.min(Math.abs(this.speed),10)*1.0)),true);
 
+    // Optional, explicitly selected assistance. The original difficulty stays unchanged.
+    if(this.difficulty==='standard'&&this.wheels.some(w=>w.contact)){
+      const turnLean=clamp(Math.atan(this.speed*this.speed*Math.tan(this.steer)/(9.81*BIKE.wheelbase)),-.42,.42);
+      const targetLean=turnLean+input.lean*.055;
+      this.body.addTorque(forward.clone().multiplyScalar(clamp((this.lean-targetLean)*1100-rollRate*125,-380,380)),true);
+    }
+    if(this.difficulty!=='extreme'&&this.speed>.85&&(input.leftPedal||input.rightPedal)){
+      this.feet=[false,false];
+    }
+
     const keys=[input.leftPedal,input.rightPedal];
     for(let side=0;side<2;side++) {
       this.pedalForces[side]+=(Number(keys[side]&&!this.feet[side])*370-this.pedalForces[side])*(1-Math.exp(-dt*15));
-      if(keys[side]&&!this.previousPedals[side]&&this.feet[side]&&this.footContacts[side]&&Math.abs(this.speed)<2.2) this.pushes[side]=0.27;
+      if(this.difficulty==='extreme'){
+        if(keys[side]&&!this.previousPedals[side]&&this.feet[side]&&this.footContacts[side]&&Math.abs(this.speed)<2.2)this.pushes[side]=.27;
+      }else{
+        if(!keys[side])this.pushSpent[side]=false;
+        if(keys[side]&&!this.previousPedals[side])this.pushBuffer[side]=.7;
+        this.pushBuffer[side]=Math.max(0,this.pushBuffer[side]-dt);
+        if((keys[side]||this.pushBuffer[side]>0)&&!this.pushSpent[side]&&this.feet[side]&&this.footContacts[side]&&Math.abs(this.speed)<2.2){
+          this.pushes[side]=.42;this.pushSpent[side]=true;this.pushBuffer[side]=0;
+        }
+      }
       this.previousPedals[side]=keys[side];
     }
     // Downward force on a rising pedal opposes crank rotation. Holding one key stalls at bottom.
-    const pedalTorque=(this.pedalForces[0]-this.pedalForces[1])*BIKE.crank*Math.cos(this.crankAngle);
+    const phase=Math.cos(this.crankAngle);
+    const pedalTorque=(this.difficulty==='extreme'?(this.pedalForces[0]-this.pedalForces[1])*phase:
+      this.pedalForces[0]*Math.max(0,phase)+this.pedalForces[1]*Math.max(0,-phase))*BIKE.crank;
     const crankInertia=0.65, wheelInertia=0.19;
     this.crankOmega=Math.max(0,this.crankOmega+(pedalTorque-this.crankOmega*0.9)*dt/crankInertia);
     const difference=this.crankOmega*BIKE.gear-this.wheels[0].omega;
@@ -152,6 +193,7 @@ export class Bicycle {
       w.omega*=Math.exp(-dt*0.018);
     }
     for(let side=0;side<2;side++) this.supportFoot(side,q,dt);
+    if(this.difficulty==='training')for(let side=0;side<2;side++)this.supportTrainingWheel(side,q,dt);
     // Air drag applies at COM. Rolling loss is handled at each tire patch.
     this.body.addForce(vel.clone().multiplyScalar(-0.25*vel.length()),true);
     if(Math.abs(this.lean)>1.02 || up.y<0.45) this.fall();
@@ -162,6 +204,25 @@ export class Bicycle {
     if(delta>0.55) this.impact=Math.max(this.impact,clamp(delta/5,0,1));
     if(!this.fallen && delta>3.5 && Math.abs(this.speed)>2.5) this.fall();
     this.previousVelocity.copy(v);
+    // HUD reads the solved rigid-body velocity, including coasting and reverse motion.
+    this.speed=v.dot(new Vector3(0,0,1).applyQuaternion(quat(this.body.rotation())));
+  }
+  private supportTrainingWheel(side:number,q:Quaternion,dt:number){
+    const w=this.trainingWheels[side],sign=side===0?1:-1;
+    const center=this.localToWorld(new Vector3(sign*TRAINING.spread,TRAINING.height,TRAINING.z));
+    w.center.copy(center);w.contact=false;w.load=0;
+    const hit=this.world.castRayAndGetNormal(new RAPIER.Ray(center,{x:0,y:-1,z:0}),TRAINING.radius+.045,true,undefined,undefined,undefined,this.body);
+    if(!hit||hit.normal.y<.3)return;
+    const point=center.clone().addScaledVector(UP,-hit.timeOfImpact),normal=vec(hit.normal);
+    const velocity=vec(this.body.velocityAtPoint(point));
+    const load=clamp((TRAINING.radius-hit.timeOfImpact)*32000-velocity.dot(normal)*1500,0,2000);
+    if(load<=0)return;
+    w.contact=true;w.load=load;w.point.copy(point);
+    this.body.addForceAtPoint(normal.multiplyScalar(load),point,true);
+    const forward=new Vector3(0,0,1).applyQuaternion(q),lateral=new Vector3().crossVectors(UP,forward).normalize();
+    const friction=clamp(-velocity.dot(lateral)*65,-load*.65,load*.65);
+    this.body.addForceAtPoint(lateral.multiplyScalar(friction).addScaledVector(forward,-clamp(velocity.dot(forward)*3,-load*.006,load*.006)),point,true);
+    w.omega=velocity.dot(forward)/TRAINING.radius;w.angle=(w.angle+w.omega*dt)%(Math.PI*2);
   }
   private tire(i:number,q:Quaternion,dt:number,inertia:number) {
     const w=this.wheels[i];
@@ -203,7 +264,7 @@ export class Bicycle {
     this.footContacts[side]=false;
     if(!this.feet[side]) { this.pushes[side]=0; return; }
     const sign=side===0?1:-1;
-    const reach=this.localToWorld(new Vector3(sign*0.36+this.bodyX*0.3,this.feet[0]&&this.feet[1]?0.074:0.11,-0.15));
+    const reach=this.localToWorld(new Vector3(sign*0.36+this.bodyX*0.3,this.difficulty==='extreme'?(this.feet[0]&&this.feet[1]?0.074:0.11):.045,-0.15));
     const origin={x:reach.x,y:reach.y+0.45,z:reach.z};
     const hit=this.world.castRay(new RAPIER.Ray(origin,{x:0,y:-1,z:0}),0.62,true,undefined,undefined,undefined,this.body);
     this.footWorld[side].copy(reach);
@@ -221,10 +282,11 @@ export class Bicycle {
     this.footContacts[side]=true;
     this.body.addForceAtPoint({x:0,y:force,z:0},point,true);
     const horizontal=new Vector3(v.x,0,v.z);
-    const friction=horizontal.multiplyScalar(-Math.min(150,force*0.7/(horizontal.length()+0.1)));
+    const pushGrip=this.difficulty!=='extreme'&&this.pushes[side]>0?.25:1;
+    const friction=horizontal.multiplyScalar(-Math.min(150,force*0.7/(horizontal.length()+0.1))*pushGrip);
     this.body.addForceAtPoint(friction,point,true);
     if(this.pushes[side]>0) {
-      this.body.addForceAtPoint(new Vector3(0,0,190).applyQuaternion(q),point,true);
+      this.body.addForceAtPoint(new Vector3(0,0,this.difficulty==='extreme'?190:290).applyQuaternion(q),point,true);
       this.pushes[side]=Math.max(0,this.pushes[side]-dt);
     }
   }
@@ -272,10 +334,11 @@ export class Bicycle {
     this.ragdoll=[]; this.ragdollJoints=[]; this.fallColliders=[];
   }
   snapshot() {
-    return {position:{...this.body.translation()},speed:this.speed,lean:this.lean,steer:this.steer,
+    return {position:{...this.body.translation()},speed:this.speed,lean:this.lean,steer:this.steer,difficulty:this.difficulty,
       crank:this.crankAngle,crankOmega:this.crankOmega,bodyX:this.bodyX,bodyZ:this.bodyZ,
       feet:[...this.feet],footContacts:[...this.footContacts],fallen:this.fallen,ragdoll:this.ragdoll.length,
       wheels:this.wheels.map(w=>({omega:w.omega,load:w.load,slip:w.slip,contact:w.contact})),
+      trainingWheels:this.trainingWheels.map(w=>({contact:w.contact,load:w.load})),
       finite:[this.speed,this.lean,this.crankAngle,...Object.values(this.body.translation())].every(Number.isFinite)};
   }
 }

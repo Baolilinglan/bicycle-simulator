@@ -130,3 +130,37 @@ test('ground push, pedal start, sustained riding, braking and both feet down for
   assert.equal(final.fallen,false);assert.ok(peak>4.5);assert.ok(Math.abs(final.speed)<.08);
   assert.deepEqual(final.footContacts,[true,true]);assert.ok(final.finite);world.free();
 });
+
+test('training wheels support a stopped rider and allow pedal-only start, coasting and braking',async()=>{
+  const {world}=await makeWorld(false),bike=new Bicycle(world,'training');
+  run(world,bike,5);
+  assert.equal(bike.fallen,false);assert.deepEqual(bike.feet,[false,false]);assert.ok(Math.abs(bike.lean)<.12);
+  assert.ok(bike.trainingWheels.some(w=>w.contact),'support wheels must carry a real ground load');
+  run(world,bike,6,()=>({...idleInput(),leftPedal:Math.cos(bike.crankAngle)>0,rightPedal:Math.cos(bike.crankAngle)<=0}));
+  const speed=bike.speed,start=bike.body.translation().z;
+  assert.ok(speed>2);assert.equal(bike.fallen,false);
+  run(world,bike,2);
+  assert.ok(bike.speed>speed*.65,'releasing pedals must preserve momentum');assert.ok(bike.body.translation().z>start+speed);
+  run(world,bike,3,()=>({...idleInput(),frontBrake:true,rearBrake:true,fore:-1}));
+  assert.ok(Math.abs(bike.speed)<.12);assert.equal(bike.fallen,false);world.free();
+});
+
+test('standard difficulty accepts an early ground-push press, auto lifts feet and damps wobble',async()=>{
+  const {world}=await makeWorld(false),bike=new Bicycle(world,'standard');
+  run(world,bike,.03,()=>({...idleInput(),leftPedal:true,rightPedal:true}));
+  run(world,bike,1.2,()=>({...idleInput(),rightPedal:true}));
+  assert.ok(bike.speed>.8,'buffered push before contact must launch the rider');
+  assert.deepEqual(bike.feet,[false,false],'support foot returns to pedal after launch');
+  run(world,bike,8,()=>({...idleInput(),leftPedal:Math.cos(bike.crankAngle)>0,rightPedal:Math.cos(bike.crankAngle)<=0}));
+  assert.equal(bike.fallen,false);assert.ok(Math.abs(bike.lean)<.2);assert.ok(bike.speed>3);world.free();
+});
+
+test('changing difficulty adds/removes support colliders without leaks and keeps extreme unassisted',async()=>{
+  const {world,bike}=await fixture();const count=world.colliders.len();
+  for(let i=0;i<4;i++){
+    bike.setDifficulty('training');assert.equal(world.colliders.len(),count+2);
+    bike.setDifficulty('standard');assert.equal(world.colliders.len(),count);
+    bike.setDifficulty('extreme');assert.equal(world.colliders.len(),count);
+  }
+  bike.feet=[false,false];run(world,bike,5);assert.equal(bike.fallen,true);world.free();
+});

@@ -8,6 +8,7 @@ const errors=[];page.on('pageerror',e=>errors.push(e.message));
 await page.goto('http://127.0.0.1:5173/?test');
 await page.waitForFunction(()=>window.bicycleDiagnostics?.ready);
 assert.equal((await page.evaluate(()=>window.bicycleDiagnostics.rider())).bones,16);
+await page.locator('#welcome-difficulty').selectOption('extreme');
 assert.equal(await page.locator('.brand,.menu-note,.scene-caption,.eyebrow').count(),0);
 await page.waitForTimeout(500);
 await page.screenshot({path:output+'/01-menu.png'});

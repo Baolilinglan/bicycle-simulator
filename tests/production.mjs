@@ -6,7 +6,7 @@ import { resolve, extname, sep } from 'node:path';
 
 // Serve exactly as a project Pages deployment, with no assets at the domain root.
 const root=resolve('dist'),prefix='/bicycle-simulator/';
-const mime={'.html':'text/html','.js':'text/javascript','.css':'text/css','.glb':'model/gltf-binary','.svg':'image/svg+xml'};
+const mime={'.html':'text/html','.js':'text/javascript','.css':'text/css','.glb':'model/gltf-binary','.svg':'image/svg+xml','.mp3':'audio/mpeg'};
 const server=createServer(async(req,res)=>{
   const url=new URL(req.url,'http://localhost');
   if(!url.pathname.startsWith(prefix)){res.writeHead(404).end();return;}
@@ -26,6 +26,8 @@ try{
   await page.waitForFunction(()=>window.bicycleDiagnostics?.ready);
   assert.equal((await page.evaluate(()=>window.bicycleDiagnostics.rider())).bones,16);
   await page.locator('#start').click();await page.locator('#dismiss-help').click();
+  await page.waitForFunction(()=>window.bicycleDiagnostics.music().time>.1);
+  assert.ok((await page.evaluate(()=>window.bicycleDiagnostics.music())).duration>30);
   assert.deepEqual(errors,[]);assert.deepEqual(badResponses,[]);
-  console.log('Production page and skinned model load correctly from /bicycle-simulator/.');
+  console.log('Production page, BGM and skinned model load correctly from /bicycle-simulator/.');
 }finally{await browser?.close();await new Promise(done=>server.close(done));}
