@@ -82,6 +82,11 @@ try{
     await one.screenshot({path:`test-results/multiplayer-${width}x${height}.png`});
   }
   await one.screenshot({path:'test-results/multiplayer-compact.png'});
+  // A host that stops drawing (e.g. a background tab) must still forward its guests.
+  await host.evaluate(()=>{window.requestAnimationFrame=()=>0;});await host.waitForTimeout(120);
+  await two.locator('#mp-close').click();await two.locator('#start').click();await two.locator('#dismiss-help').click();
+  await two.keyboard.down('e');await two.waitForTimeout(750);await two.keyboard.up('e');
+  await one.waitForFunction(()=>window.bicycleDiagnostics.room().members.some(m=>m.name==='骑友二'&&m.best>.1));
   await host.locator('#mp-leave').click();
   await one.waitForFunction(()=>window.bicycleDiagnostics.room().role==='none');
   await two.waitForFunction(()=>window.bicycleDiagnostics.room().role==='none');

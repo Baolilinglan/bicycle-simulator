@@ -117,7 +117,9 @@ export class RideRoom {
     if(this.role==='host'){
       const member=this.members.get(link.id);if(!member)return;
       if(message.type==='frame'&&validFrame(message.frame)){
-        member.frame=message.frame;member.best=Math.max(member.best,message.frame.distance);return;
+        member.frame=message.frame;member.best=Math.max(member.best,message.frame.distance);
+        // Forward on receipt so a background host's render rate cannot slow other riders.
+        this.broadcast({type:'peer-frame',member});this.onChange();return;
       }
       if(message.type==='mic'&&typeof message.value==='boolean'){member.mic=message.value;return;}
       if(message.type==='chat'&&typeof message.text==='string'&&performance.now()-link.lastChat>700){
@@ -126,6 +128,9 @@ export class RideRoom {
       return;
     }
     if(this.role!=='guest'||link.id!=='host')return;
+    if(message.type==='peer-frame'&&validMember(message.member)&&this.members.has(message.member.id)){
+      this.members.set(message.member.id,message.member);this.onChange();return;
+    }
     if(message.type==='welcome'&&message.room===this.id&&message.self===this.self&&isDifficulty(message.difficulty)&&
       Array.isArray(message.members)&&message.members.length<=MAX_PLAYERS&&message.members.every(validMember)){
       this.difficulty=message.difficulty;this.members=new Map(message.members.map((m:Member)=>[m.id,m]));
