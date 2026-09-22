@@ -24,6 +24,7 @@ export class BicycleView {
   pedals:THREE.Mesh[]=[];
   training=new THREE.Group();
   supportWheels:THREE.Group[]=[];
+  brakeLevers:THREE.Group[]=[];
   rider:Rider;
   constructor(public scene:THREE.Scene) {
     scene.add(this.root);
@@ -47,7 +48,8 @@ export class BicycleView {
     rod(this.front,v(-.32,.72,-.06),v(.32,.72,-.06),.018,m);
     for(const side of [-1,1]){
       rod(this.front,v(side*.22,.72,-.06),v(side*.34,.72,-.02),.027,palette.rubber);
-      rod(this.front,v(side*.21,.695,.005),v(side*.30,.69,.07),.009,d);
+      const lever=new THREE.Group();lever.position.set(side*.21,.715,-.01);this.front.add(lever);
+      rod(lever,v(0,0,0),v(side*.10,-.005,-.055),.009,d);this.brakeLevers[side===1?0:1]=lever;
       const cable=new THREE.CatmullRomCurve3([v(side*.20,.70,-.05),v(side*.16,.56,.15),v(side*.04,.45,.02)]);
       mesh(new THREE.TubeGeometry(cable,12,.003,4,false),palette.rubber,this.front);
     }
@@ -88,6 +90,7 @@ export class BicycleView {
   update(bike:Bicycle,firstPerson:boolean) {
     this.root.position.copy(vec(bike.body.translation()));this.root.quaternion.copy(quat(bike.body.rotation()));
     this.front.rotation.y=bike.steer;
+    this.brakeLevers.forEach((lever,i)=>lever.rotation.y=(i===0?1:-1)*bike.brakes[i===0?1:0]*.5);
     this.rearWheel.rotation.x=bike.wheels[0].angle;this.frontWheel.rotation.x=bike.wheels[1].angle;
     this.cranks.rotation.x=bike.crankAngle;
     this.training.visible=bike.difficulty==='training';
@@ -101,12 +104,13 @@ export class BicycleView {
       if(bike.feet[i]) {
         foot=v(side*.36+bike.bodyX*.3,.10,-.15);
         if(bike.footContacts[i]) {foot.copy(bike.footWorld[i]).sub(this.root.position).applyQuaternion(this.root.quaternion.clone().invert());foot.y+=.045;}
-        foot.z-=Math.sin((.27-bike.pushes[i])/.27*Math.PI)*.11*(bike.pushes[i]>0?1:0);
+        const duration=bike.difficulty==='extreme'?.27:.42;
+        foot.z-=Math.sin((duration-bike.pushes[i])/duration*Math.PI)*.11*(bike.pushes[i]>0?1:0);
       }
       feet.push(foot);
       hands.push(v(side*.29,.75,-.13).applyAxisAngle(v(0,1,0),bike.steer).add(this.front.position));
     }
     this.rider.update(bike,firstPerson,feet,hands);
   }
-  headPosition(bike:Bicycle) {return bike.localToWorld(v(bike.bodyX,1.61,.18+bike.bodyZ));}
+  headPosition(bike:Bicycle) {return bike.localToWorld(v(bike.bodyX,1.61-bike.feedback.bump*.35,.18+bike.bodyZ+bike.feedback.push));}
 }

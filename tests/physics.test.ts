@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeWorld, STEP } from '../src/physics/world.ts';
+import { makeWorld, STEP, routeCurve, groundHeight, SURFACE_PATCHES, SURFACES } from '../src/physics/world.ts';
 import { Bicycle, idleInput, BIKE } from '../src/physics/bicycle.ts';
 import { Quaternion, Vector3 } from 'three';
 
@@ -163,4 +163,56 @@ test('changing difficulty adds/removes support colliders without leaks and keeps
     bike.setDifficulty('extreme');assert.equal(world.colliders.len(),count);
   }
   bike.feet=[false,false];run(world,bike,5);assert.equal(bike.fallen,true);world.free();
+});
+
+test('ride distance follows the travelled path, survives upright reset and clears on fall or return home',async()=>{
+  const {world}=await makeWorld(false),bike=new Bicycle(world,'training');run(world,bike,1);
+  seedVelocity(bike,4);run(world,bike,2);
+  assert.ok(bike.rideDistance>7&&bike.rideDistance<9);
+  const saved=bike.rideDistance;bike.reset(false);assert.equal(bike.rideDistance,saved);
+  run(world,bike,.5);assert.ok(bike.rideDistance<saved+.1,'reset teleport and settling must not count');
+  bike.body.setRotation(new Quaternion().setFromAxisAngle(new Vector3(0,0,1),1.25),true);
+  run(world,bike,.1);assert.equal(bike.fallen,true);assert.equal(bike.rideDistance,0);
+  run(world,bike,1);assert.equal(bike.rideDistance,0,'ragdoll movement must not count');
+  bike.reset();assert.equal(bike.rideDistance,0);assert.equal(bike.body.translation().z,-32);world.free();
+});
+
+test('pedal coaching follows crank leverage and grounded foot state without changing the input',async()=>{
+  const {world,bike}=await fixture();run(world,bike,2);
+  assert.equal(bike.pedalFeedback(0).state,'push');
+  bike.feet=[false,false];bike.crankAngle=0;assert.equal(bike.pedalFeedback(0).state,'ready');assert.equal(bike.pedalFeedback(1).state,'rising');
+  bike.crankAngle=Math.PI/2;assert.equal(bike.pedalFeedback(0).state,'bottom');
+  bike.feet[0]=true;bike.footContacts[0]=false;assert.equal(bike.pedalFeedback(0).state,'waiting');world.free();
+});
+
+test('visible surface zones alter rolling resistance and wet-road braking grip',async()=>{
+  const speeds:Record<string,number>={};
+  for(const kind of ['asphalt','wet','gravel','grass'] as const){
+    const {world}=await makeWorld(true),bike=new Bicycle(world,'training');
+    const patch=SURFACE_PATCHES.find(p=>p.kind===kind);
+    bike.body.setTranslation({x:patch?.x??40,y:.03,z:(patch?.z??0)-1},true);
+    bike.body.setRotation({x:0,y:0,z:0,w:1},true);run(world,bike,.6);seedVelocity(bike,5);
+    run(world,bike,.6);speeds[kind]=bike.speed;
+    assert.equal(bike.wheels[0].surface,kind);assert.equal(bike.fallen,false);world.free();
+  }
+  assert.ok(speeds.grass<speeds.asphalt-.08);assert.ok(speeds.gravel<speeds.asphalt-.04);
+  const braking:Record<string,number>={};
+  for(const kind of ['asphalt','wet']){
+    const {world}=await makeWorld(true),bike=new Bicycle(world,'training');
+    bike.body.setTranslation({x:kind==='wet'?0:40,y:.03,z:-1},true);run(world,bike,.5);seedVelocity(bike,5);
+    run(world,bike,.5,()=>({...idleInput(),frontBrake:true,rearBrake:true,fore:-1}));braking[kind]=bike.speed;world.free();
+  }
+  assert.ok(braking.wet>braking.asphalt+.35,'wet surface should have a longer stopping distance');
+  assert.ok(SURFACES.gravel.sound>SURFACES.asphalt.sound);
+});
+
+test('practice loop closes and crosses the same ramp profile as the physics mesh',()=>{
+  const curve=routeCurve();assert.ok(curve.getPoint(0).distanceTo(curve.getPoint(1))<.001);
+  let onRamp=0,onNarrow=0;
+  for(let i=0;i<720;i++){
+    const p=curve.getPoint(i/720);if(groundHeight(p.x,p.z)>.5)onRamp++;
+    if(Math.abs(p.x+12)<1&&p.z> -32&&p.z< -18)onNarrow++;
+    assert.ok(Math.abs(p.x)<50&&p.z> -70&&p.z<80);
+  }
+  assert.ok(onRamp>20);assert.ok(onNarrow>20);
 });

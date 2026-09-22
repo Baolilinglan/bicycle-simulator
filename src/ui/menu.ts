@@ -4,7 +4,7 @@ import { TouchControls } from './touch';
 import { difficulties, type Difficulty } from '../difficulty';
 
 const labels:Record<Action,string>={leftPedal:'左脚踩踏 / 蹬地',rightPedal:'右脚踩踏 / 蹬地',leanLeft:'重心向左',leanRight:'重心向右',
-  forward:'重心向前',back:'重心向后',leftFoot:'左脚落地 / 收脚',rightFoot:'右脚落地 / 收脚',camera:'切换视角',reset:'重新摆正',debug:'物理调试',look:'低头看踏板',help:'按键提示',frontBrake:'前刹车',rearBrake:'后刹车',pause:'暂停',steerLeft:'车把向左（可选）',steerRight:'车把向右（可选）',lookUp:'抬头（可选）',lookDown:'低头（可选）'};
+  forward:'重心向前',back:'重心向后',leftFoot:'左脚落地 / 收脚',rightFoot:'右脚落地 / 收脚',camera:'切换视角',reset:'重新摆正',returnHome:'回到起点',debug:'物理调试',look:'低头看踏板',help:'按键提示',frontBrake:'前刹车',rearBrake:'后刹车',pause:'暂停',steerLeft:'车把向左（可选）',steerRight:'车把向右（可选）',lookUp:'抬头（可选）',lookDown:'低头（可选）'};
 
 export class Menu {
   playing=false;started=false;debug=false;
@@ -24,7 +24,7 @@ export class Menu {
       <main class="menu-shell" id="menu-shell">
         <div class="menu-shade"></div>
         <section class="welcome" id="welcome" aria-label="自行车模拟器主菜单">
-          <h1>自行车</h1>
+          <h1 class="game-title" aria-label="自行车模拟器 Bicycle Simulator"><span class="logo-wrap"><img class="title-logo" src="${import.meta.env.BASE_URL}images/bicycle-title.png" alt="自行车模拟器 Bicycle Simulator" draggable="false"><span class="logo-shine" aria-hidden="true"></span></span></h1>
           <div class="difficulty-picker"><label for="welcome-difficulty">骑行难度</label><select id="welcome-difficulty" aria-describedby="welcome-difficulty-caption"></select><p id="welcome-difficulty-caption"></p></div>
           <div class="menu-actions">
             <button class="primary" id="start" disabled><span>正在准备练习场</span><span aria-hidden="true">↗</span></button>
@@ -55,24 +55,28 @@ export class Menu {
           <label class="setting-row" for="music-enabled"><span>背景音乐</span><input id="music-enabled" type="checkbox" role="switch"></label>
           <label class="setting-row" for="music-volume"><span>音乐音量</span><output id="music-volume-value"></output><input id="music-volume" type="range" min="0" max="1" step="0.05"></label>
           <p class="music-track">Keep It Straight</p>
+          <label class="setting-row" for="pedal-assist"><span>踩踏节奏辅助</span><input id="pedal-assist" type="checkbox" role="switch"></label>
           <label class="setting-row" for="camera"><span>视角</span><select id="camera"><option value="first">第一人称</option><option value="third">第三人称</option></select></label>
           <div class="reset-actions"><button id="upright">重新摆正自行车</button><button id="reset-position">回到起点</button></div>
           <details><summary>键位设置</summary><p class="setting-note">点击动作右侧，再按键盘或鼠标按键。重复绑定会交换。Delete 清除，Esc 取消；Esc 始终可暂停。</p><div id="bindings" class="bindings"></div><button id="reset-bindings" class="text-button">恢复默认键位</button></details>
         </section>
       </main>
-      <nav id="ride-tools" hidden aria-label="骑行工具"><button id="ride-help" aria-label="显示按键提示">操作</button><button id="ride-camera" class="touch-only" aria-label="切换视角">视角</button><button id="ride-reset" class="touch-only" aria-label="原地摆正">摆正</button><button id="ride-pause" aria-label="暂停游戏">暂停</button></nav>
+      <nav id="ride-tools" hidden aria-label="骑行工具"><button id="ride-help" aria-label="显示按键提示">操作</button><button id="ride-camera" class="touch-only" aria-label="切换视角">视角</button><button id="ride-reset" class="touch-only" aria-label="原地摆正">摆正</button><button id="ride-home" aria-label="一键回到起点">起点</button><button id="ride-pause" aria-label="暂停游戏">暂停</button></nav>
       <div id="help-layer" hidden><section class="help-dialog" role="dialog" aria-modal="true" aria-labelledby="help-title"><h2 id="help-title">按键提示</h2><div id="help-grid"></div><p class="help-start" id="help-start"></p><button id="dismiss-help" class="primary">知道了，开始骑行 <span aria-hidden="true">↗</span></button></section></div>
       <div id="orientation"><span class="rotate-phone" aria-hidden="true"></span><h2>请将设备横过来</h2><p>横屏后即可骑行</p></div>
-      <div id="speedometer" hidden aria-label="当前速度"><output id="speed-value">0.0</output><span>km/h</span></div>
+      <div id="speedometer" hidden aria-label="骑行数据"><div class="speed-row"><output id="speed-value">0.0</output><span>km/h</span></div><div class="distance-row" title="摔倒或回到起点后重新计数"><span>本段</span><output id="ride-distance">0.0 m</output></div></div>
+      <div id="pedal-coach" hidden aria-label="踩踏节奏"><div data-pedal="0"><kbd></kbd><span></span><i></i></div><div data-pedal="1"><kbd></kbd><span></span><i></i></div></div>
       <pre id="debug" hidden aria-label="物理调试信息"></pre>
       <div id="toast" role="status" hidden></div>
     `;
+    this.root.querySelector<HTMLElement>('.game-title')!.style.setProperty('--logo-image',`url("${new URL(import.meta.env.BASE_URL+'images/bicycle-title.png',document.baseURI).href}")`);
     this.debugElement=this.root.querySelector('#debug')!;
     this.click('start',()=>this.start());this.click('controls-start',()=>{this.hasSeenHelp=true;this.start();});
     this.touch=new TouchControls(input,this.root);
     document.body.classList.toggle('is-touch',input.touchMode);
     try{this.hasSeenHelp=localStorage.getItem('bicycle.controls-seen.v2')==='yes';}catch{}
     this.click('ride-help',()=>this.openHelp());this.click('dismiss-help',()=>this.dismissHelp());
+    this.click('ride-home',()=>input.onAction('returnHome'));
     this.click('ride-pause',()=>this.pause());this.click('ride-camera',()=>input.onAction('camera'));this.click('ride-reset',()=>input.onAction('reset'));
     this.root.querySelector('#help-layer')!.addEventListener('keydown',e=>{
       if((e as KeyboardEvent).key==='Tab'){e.preventDefault();this.root.querySelector<HTMLButtonElement>('#dismiss-help')!.focus();}
@@ -104,6 +108,8 @@ export class Menu {
     musicVolume.oninput=()=>{settings.musicVolume=Number(musicVolume.value);this.updateSettings();};
     const musicEnabled=this.root.querySelector<HTMLInputElement>('#music-enabled')!;musicEnabled.checked=settings.musicEnabled;
     musicEnabled.onchange=()=>{settings.musicEnabled=musicEnabled.checked;this.updateSettings();};
+    const pedalAssist=this.root.querySelector<HTMLInputElement>('#pedal-assist')!;pedalAssist.checked=settings.pedalAssist;
+    pedalAssist.onchange=()=>{settings.pedalAssist=pedalAssist.checked;this.updateSettings();};
     this.click('reset-bindings',()=>{this.input.clear();this.input.onRebind=null;settings.bindings={...defaultBindings};this.updateSettings();this.renderBindings();});
     this.renderBindings();this.updateSettings();
   }
@@ -133,11 +139,11 @@ export class Menu {
     const k=(a:Action)=>keyLabel(this.settings.bindings[a]);
     const steering=['鼠标',...(['steerLeft','steerRight','lookUp','lookDown'] as Action[]).filter(a=>this.settings.bindings[a]).map(k)].join(' / ');
     const items=this.input.touchMode?[
-      ['左踏 / 右踏','交替踩踏，落地时蹬地'],['左脚 / 右脚','切换落脚与收脚'],['左侧圆盘','移动身体重心'],['右侧圆盘','左右转把，上下看路'],['前刹 / 后刹','按住刹车，可同时操作'],['顶部按钮','视角、摆正与暂停'],
+      ['左踏 / 右踏','交替踩踏，落地时蹬地'],['左脚 / 右脚','切换落脚与收脚'],['左侧圆盘','移动身体重心'],['右侧圆盘','左右转把，上下看路'],['前刹 / 后刹','按住刹车，可同时操作'],['顶部按钮','视角、摆正、起点与暂停'],
     ]:[
       [`${k('leftPedal')} / ${k('rightPedal')}`,'左右脚踩踏 / 蹬地'],[`${k('leftFoot')} / ${k('rightFoot')}`,'左右脚落地 / 收脚'],
       [`${k('leanLeft')} ${k('leanRight')} · ${k('forward')} ${k('back')}`,'左右 / 前后重心'],[steering,'车把 / 视线'],
-      [`${k('frontBrake')} / ${k('rearBrake')}`,'前刹 / 后刹'],[`${k('reset')} · ${k('camera')} · ${k('help')}`,'摆正 · 视角 · 提示'],
+      [`${k('frontBrake')} / ${k('rearBrake')}`,'前刹 / 后刹'],[`${k('reset')} · ${k('returnHome')} · ${k('camera')} · ${k('help')}`,'摆正 · 起点 · 视角 · 提示'],
     ];
     const grid=this.root.querySelector('#help-grid')!;grid.replaceChildren();
     for(const [key,label] of items){const row=document.createElement('div'),keys=document.createElement('kbd'),text=document.createElement('span');keys.textContent=key;text.textContent=label;row.append(keys,text);grid.append(row);}
@@ -166,10 +172,11 @@ export class Menu {
     this.root.querySelector('#difficulty-caption')!.textContent=d.caption+'。切换后原地重新摆正。';
     saveSettings(this.settings);this.onSettingsChange();
     const b=this.settings.bindings,k=(a:Action)=>keyLabel(b[a]);
+    this.root.querySelector('#ride-home')!.setAttribute('title',`${k('returnHome')} 回到起点`);
     this.root.querySelector('#pedal-keys')!.textContent=`${k('leftPedal')} / ${k('rightPedal')}`;
     this.root.querySelector('#body-keys')!.textContent=`${k('leanLeft')} ${k('leanRight')} / ${k('forward')} ${k('back')}`;
     this.root.querySelector('#foot-keys')!.textContent=`${k('leftFoot')} / ${k('rightFoot')}`;
-    this.root.querySelector('#look-keys')!.textContent=`${k('look')} 低头 · ${k('reset')} 摆正 · ${k('camera')} 视角`;
+    this.root.querySelector('#look-keys')!.textContent=`${k('look')} 低头 · ${k('reset')} 摆正 · ${k('returnHome')} 起点 · ${k('camera')} 视角`;
     this.root.querySelectorAll('.control-grid .keys')[4].textContent=`${k('frontBrake')} / ${k('rearBrake')}`;
     this.root.querySelectorAll('.control-grid .keys')[1].textContent=['鼠标左右',...(['steerLeft','steerRight'] as Action[]).filter(a=>b[a]).map(k)].join(' / ');
     if(this.input.touchMode){
@@ -198,10 +205,19 @@ export class Menu {
   }
   toggleDebug(){this.debug=!this.debug;this.debugElement.hidden=!this.debug;}
   updateDebug(b:Bicycle,fps:number){
-    this.root.querySelector<HTMLElement>('#ride-tools')!.hidden=!this.playing;
+    const tools=this.root.querySelector<HTMLElement>('#ride-tools')!;tools.hidden=!this.started||this.helpOpen;tools.classList.toggle('paused',!this.playing);
     this.root.querySelector<HTMLElement>('#speedometer')!.hidden=!this.playing;
     const speed=this.root.querySelector<HTMLOutputElement>('#speed-value')!;const value=(Math.hypot(b.body.linvel().x,b.body.linvel().z)*3.6).toFixed(1);
     if(speed.value!==value)speed.value=value;
+    const distance=this.root.querySelector<HTMLOutputElement>('#ride-distance')!;
+    const text=b.rideDistance>=1000?(b.rideDistance/1000).toFixed(2)+' km':b.rideDistance.toFixed(1)+' m';if(distance.value!==text)distance.value=text;
+    const coach=this.root.querySelector<HTMLElement>('#pedal-coach')!;coach.hidden=!this.playing||!this.settings.pedalAssist||b.fallen||this.debug;
+    const states:Record<string,string>={ready:'可发力',bottom:'换脚',rising:'等待回转',push:'可蹬地',pushing:'蹬地中',waiting:'等落地',lift:'请收脚',air:'后轮离地',fallen:'已倒地'};
+    if(!coach.hidden)coach.querySelectorAll<HTMLElement>('[data-pedal]').forEach((row,i)=>{
+      const pedal=b.pedalFeedback(i);row.dataset.state=pedal.state;row.classList.toggle('pressed',pedal.pressed);
+      row.querySelector('kbd')!.textContent=this.input.touchMode?(i===0?'左踏':'右踏'):keyLabel(this.settings.bindings[i===0?'leftPedal':'rightPedal']);
+      row.querySelector('span')!.textContent=states[pedal.state];row.style.setProperty('--power',String(pedal.power));
+    });
     this.touch.update(this.playing&&this.input.touchMode,b);
     this.debugElement.hidden=!this.debug||!this.playing;
     if(!this.debug)return;

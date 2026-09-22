@@ -24,7 +24,7 @@ try{
   page.on('response',r=>{if(r.status()>=400)badResponses.push(r.url());});
   await page.goto(`http://127.0.0.1:${server.address().port}${prefix}`);
   await page.waitForFunction(()=>window.bicycleDiagnostics?.ready);
-  assert.equal((await page.evaluate(()=>window.bicycleDiagnostics.rider())).bones,16);
+  assert.equal((await page.evaluate(()=>window.bicycleDiagnostics.rider())).bones,18);
   await page.locator('#start').click();await page.locator('#dismiss-help').click();
   await page.waitForFunction(()=>window.bicycleDiagnostics.music().time>.1);
   assert.ok((await page.evaluate(()=>window.bicycleDiagnostics.music())).duration>30);

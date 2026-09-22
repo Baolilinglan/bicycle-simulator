@@ -1,5 +1,5 @@
 import './ui/interface.css';
-import { makeWorld, STEP } from './physics/world';
+import { makeWorld, STEP, groundHeight } from './physics/world';
 import { Bicycle, type RideInput } from './physics/bicycle';
 import { View } from './render/app';
 import { Input, readSettings, saveSettings } from './input';
@@ -15,6 +15,7 @@ async function boot(){
   let accumulator=0,last=performance.now(),fps=60,pausedByContext=false;
   // Settle onto a planted left foot before the first frame; there is no hidden stand.
   for(let i=0;i<180;i++){bike.step(input.read());world.step();bike.afterStep();}
+  bike.rideDistance=0;
   menu.onStart=()=>{last=performance.now();accumulator=0;void audio.start(settings).catch(()=>menu.toast('声音暂未启动，请暂停后继续骑行。'));};
   menu.onPause=()=>{accumulator=0;audio.pause();};
   menu.onSettingsChange=()=>audio.setMusic(settings,menu.playing);
@@ -28,6 +29,7 @@ async function boot(){
     if(action==='leftFoot')bike.toggleFoot(0);
     if(action==='rightFoot')bike.toggleFoot(1);
     if(action==='reset')reset(false);
+    if(action==='returnHome')reset(true);
     if(action==='debug')menu.toggleDebug();
     if(action==='camera'){settings.camera=settings.camera==='first'?'third':'first';saveSettings(settings);const sel=document.querySelector<HTMLSelectElement>('#camera');if(sel)sel.value=settings.camera;}
   };
@@ -42,7 +44,7 @@ async function boot(){
       input.advance(dt);accumulator+=dt;const control=input.read();
       while(accumulator>=STEP){bike.step(control);world.step();bike.afterStep();accumulator-=STEP;}
     }
-    audio.update(bike,settings.volume,menu.playing);
+    audio.update(bike,settings.volume,menu.playing,settings.pedalAssist);
     menu.updateDebug(bike,fps);
     if(!pausedByContext)view.draw(bike,props,settings.camera,input.lookAngle(),menu.menuVisible,dt);
   }
@@ -54,6 +56,7 @@ async function boot(){
       snapshot:()=>bike.snapshot(),reset:(start=true)=>reset(start),pause:()=>menu.pause(),
       step:(count:number,control:RideInput)=>{for(let i=0;i<count;i++){bike.step(control);world.step();bike.afterStep();}return bike.snapshot();},
       setFeet:(l:boolean,r:boolean)=>{bike.feet=[l,r];},
+      place:(x:number,z:number)=>{reset(true);bike.body.setTranslation({x,y:groundHeight(x,z)+.03,z},true);},
       show:()=>view.draw(bike,props,settings.camera,input.lookAngle(),false,1/60),
     }});
   }

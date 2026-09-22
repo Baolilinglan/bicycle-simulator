@@ -4,19 +4,19 @@ import { isDifficulty, type Difficulty } from './difficulty';
 
 export const defaultBindings = {
   leftPedal:'KeyQ',rightPedal:'KeyE',leanLeft:'KeyA',leanRight:'KeyD',forward:'KeyW',back:'KeyS',
-  leftFoot:'KeyZ',rightFoot:'KeyC',camera:'KeyV',reset:'KeyR',debug:'F3',look:'Space',help:'KeyH',
+  leftFoot:'KeyZ',rightFoot:'KeyC',camera:'KeyV',reset:'KeyR',debug:'F3',look:'Space',help:'KeyH',returnHome:'KeyT',
   frontBrake:'Mouse0',rearBrake:'Mouse2',pause:'Escape',steerLeft:'',steerRight:'',lookUp:'',lookDown:'',
 };
 export type Action=keyof typeof defaultBindings;
-export interface Settings { sensitivity:number;volume:number;musicVolume:number;musicEnabled:boolean;difficulty:Difficulty;camera:'first'|'third';bindings:Record<Action,string> }
+export interface Settings { sensitivity:number;volume:number;musicVolume:number;musicEnabled:boolean;pedalAssist:boolean;difficulty:Difficulty;camera:'first'|'third';bindings:Record<Action,string> }
 export function readSettings():Settings{
-  const defaults:Settings={sensitivity:1,volume:.45,musicVolume:.35,musicEnabled:true,difficulty:'training',camera:'first',bindings:{...defaultBindings}};
+  const defaults:Settings={sensitivity:1,volume:.45,musicVolume:.35,musicEnabled:true,pedalAssist:true,difficulty:'training',camera:'first',bindings:{...defaultBindings}};
   try{
     const saved=JSON.parse(localStorage.getItem('manual-bicycle.settings.v1')||'null');
     if(!saved)return defaults;
     return {sensitivity:clamp(Number(saved.sensitivity)||1,.2,2.5),volume:clamp(Number(saved.volume)||0,0,1),
       musicVolume:Number.isFinite(saved.musicVolume)?clamp(saved.musicVolume,0,1):defaults.musicVolume,
-      musicEnabled:typeof saved.musicEnabled==='boolean'?saved.musicEnabled:true,difficulty:isDifficulty(saved.difficulty)?saved.difficulty:'training',
+      musicEnabled:typeof saved.musicEnabled==='boolean'?saved.musicEnabled:true,pedalAssist:typeof saved.pedalAssist==='boolean'?saved.pedalAssist:true,difficulty:isDifficulty(saved.difficulty)?saved.difficulty:'training',
       camera:saved.camera==='third'?'third':'first',bindings:sanitizeBindings(saved.bindings)};
   }catch{return defaults;}
 }
@@ -90,7 +90,7 @@ export class Input {
     if(action==='help'||action==='pause'){this.onAction(action);return;}
     if(!this.active)return;
     this.held.add(code);
-    if(action&&['leftFoot','rightFoot','camera','reset','debug'].includes(action))this.onAction(action);
+    if(action&&['leftFoot','rightFoot','camera','reset','returnHome','debug'].includes(action))this.onAction(action);
   }
   advance(dt:number){
     if(!this.active)return;

@@ -56,6 +56,7 @@ for side,s in [('L',1),('R',-1)]:
       f'UpperArm_{side}':((s*.185,1.415,0),(s*.32,1.155,.04),'Spine'),
       f'Forearm_{side}':((s*.32,1.155,.04),(s*.375,.905,.10),f'UpperArm_{side}'),
       f'Hand_{side}':((s*.375,.905,.10),(s*.375,.905,.20),f'Forearm_{side}'),
+      f'Fingers_{side}':((s*.375,.907,.135),(s*.375,.907,.19),f'Hand_{side}'),
     })
 
 arm=bpy.data.armatures.new('RiderSkeleton')
@@ -189,7 +190,7 @@ for side,s in [('L',1),('R',-1)]:
     for j in range(4):
         xx=x+(j-1.5)*.019;length=[.073,.083,.080,.068][j]
         tube('Finger_'+side,[(xx,y+.002,z+.035),(xx,y-.004,z+length),(xx,y-.027,z+length+.005),(xx,y-.044,z+length-.010),(xx,y-.041,z+length-.028)],
-             [.010,.0095,.009,.008,.007],'skin',bn,'Hands',10)
+             [.010,.0095,.009,.008,.007],'skin',f'Fingers_{side}','Hands',10)
     tube('Thumb_'+side,[(x-s*.027,y-.006,z+.007),(x-s*.050,y-.018,z+.025),(x-s*.041,y-.043,z+.037),(x-s*.026,y-.039,z+.048)],
          [.015,.014,.012,.010],'skin',bn,'Hands',12)
 

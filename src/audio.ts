@@ -1,5 +1,6 @@
 import { Bicycle } from './physics/bicycle';
 import type { Settings } from './input';
+import { SURFACES } from './physics/world';
 
 /** Mechanical audio and a separately mixed local BGM track, paused with the simulation. */
 export class RideAudio {
@@ -13,6 +14,10 @@ export class RideAudio {
   private nextClick=0;
   private lastCrank=0;
   private lastImpact=0;
+  private lastPedal=[false,false];
+  private lastPedalState=['',''];
+  private texture?:GainNode;
+  private textureFilter?:BiquadFilterNode;
   private music=new Audio(`${import.meta.env.BASE_URL}audio/keep-it-straight.mp3`);
   private musicGain?:GainNode;
   private musicWanted=false;
@@ -33,6 +38,8 @@ export class RideAudio {
       this.tire=ctx.createGain();this.tire.gain.value=0;source.connect(this.tireFilter).connect(this.tire).connect(this.master);
       const high=ctx.createBiquadFilter();high.type='bandpass';high.frequency.value=1800;high.Q.value=1.5;
       this.chain=ctx.createGain();this.chain.gain.value=0;source.connect(high).connect(this.chain).connect(this.master);
+      this.textureFilter=ctx.createBiquadFilter();this.textureFilter.type='bandpass';this.textureFilter.frequency.value=950;
+      this.texture=ctx.createGain();this.texture.gain.value=0;source.connect(this.textureFilter).connect(this.texture).connect(this.master);
       this.brakeTone=ctx.createOscillator();this.brakeTone.type='sine';this.brakeTone.frequency.value=680;
       this.brake=ctx.createGain();this.brake.gain.value=0;this.brakeTone.connect(this.brake).connect(this.master);
       source.start();this.brakeTone.start();
@@ -60,15 +67,27 @@ export class RideAudio {
     if(this.ctx){this.master?.gain.setTargetAtTime(0,this.ctx.currentTime,.04);this.musicGain?.gain.setTargetAtTime(0,this.ctx.currentTime,.04);}
   }
   diagnostics(){return {paused:this.music.paused,time:this.music.currentTime,duration:Number.isFinite(this.music.duration)?this.music.duration:0,ready:this.music.readyState,error:this.musicFailure,loop:this.music.loop,volume:this.musicGain?.gain.value??0};}
-  update(b:Bicycle,volume:number,playing:boolean){
+  update(b:Bicycle,volume:number,playing:boolean,pedalAssist=true){
     if(!this.ctx||!this.master)return;const now=this.ctx.currentTime,speed=Math.abs(b.speed);
     this.master.gain.setTargetAtTime(playing?volume:0,now,.05);
-    this.tire!.gain.setTargetAtTime(Math.min(.11,speed*.009)*(b.wheels.some(w=>w.contact)?1:.05),now,.06);
-    this.tireFilter!.frequency.setTargetAtTime(220+speed*95,now,.08);
+    const contact=b.wheels.filter(w=>w.contact),surface=SURFACES[contact[0]?.surface||'asphalt'];
+    this.tire!.gain.setTargetAtTime(Math.min(.14,speed*.009*surface.sound)*(contact.length?1:.05),now,.06);
+    this.tireFilter!.frequency.setTargetAtTime((220+speed*95)*surface.frequency,now,.08);
+    const slip=contact.reduce((n,w)=>Math.max(n,w.slip),0);
+    this.texture!.gain.setTargetAtTime(Math.min(.055,speed*.004*surface.roughness+slip*.009),now,.04);
+    this.textureFilter!.frequency.setTargetAtTime(surface===SURFACES.grass?430:surface===SURFACES.wet?2100:1250,now,.08);
     this.chain!.gain.setTargetAtTime(b.fallen?0:Math.min(.035,b.crankOmega*.004),now,.03);
     this.brake!.gain.setTargetAtTime(Math.min(.026,speed*.008)*Math.max(...b.brakes),now,.06);
     this.brakeTone!.frequency.setTargetAtTime(410+speed*30,now,.05);
     if(!playing)return;
+    for(let i=0;i<2;i++){
+      const pedal=b.pedalFeedback(i);
+      if(pedalAssist&&pedal.pressed&&!b.fallen){
+        if(!this.lastPedal[i])this.tick(pedal.state==='ready'?.014:.007,pedal.state==='ready'?340:pedal.state==='push'||pedal.state==='pushing'?95:140,.035);
+        else if(pedal.state==='bottom'&&this.lastPedalState[i]!=='bottom')this.tick(.009,180,.025);
+      }
+      this.lastPedal[i]=pedal.pressed;this.lastPedalState[i]=pedal.state;
+    }
     if(speed>.45&&b.crankOmega<.3&&!b.fallen&&now>this.nextClick){this.tick(.008,1900,.008);this.nextClick=now+Math.max(.018,.22/(speed+.5));}
     const crankQuadrant=Math.floor(b.crankAngle/(Math.PI/2));
     if(crankQuadrant!==this.lastCrank&&b.crankOmega>.5)this.tick(.008,260,.04);

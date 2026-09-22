@@ -7,7 +7,7 @@ const page=await browser.newPage({viewport:{width:1440,height:900},deviceScaleFa
 const errors=[];page.on('pageerror',e=>errors.push(e.message));
 await page.goto('http://127.0.0.1:5173/?test');
 await page.waitForFunction(()=>window.bicycleDiagnostics?.ready);
-assert.equal((await page.evaluate(()=>window.bicycleDiagnostics.rider())).bones,16);
+assert.equal((await page.evaluate(()=>window.bicycleDiagnostics.rider())).bones,18);
 await page.locator('#welcome-difficulty').selectOption('extreme');
 assert.equal(await page.locator('.brand,.menu-note,.scene-caption,.eyebrow').count(),0);
 await page.waitForTimeout(500);
@@ -52,7 +52,7 @@ await page.getByRole('button',{name:'设置',exact:false}).first().click();
 await page.locator('#camera').selectOption('first');
 await page.locator('#volume').fill('0.25');
 await page.screenshot({path:output+'/06-settings.png'});
-await page.getByRole('button',{name:'回到起点'}).click();
+await page.getByRole('button',{name:'回到起点',exact:true}).click();
 await page.keyboard.press('F3');
 await page.keyboard.press('z');
 await page.waitForTimeout(3500);

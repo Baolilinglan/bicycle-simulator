@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { COURSE, rampGeometry, type Prop, vec, quat } from '../physics/world';
+import { COURSE, rampGeometry, routeCurve, routeWidth, groundHeight, SURFACE_PATCHES, type Prop, vec, quat } from '../physics/world';
 import { mesh, rod } from './bicycle-view';
 
 const material=(c:string)=>new THREE.MeshStandardMaterial({color:c,roughness:.95});
@@ -7,16 +7,18 @@ export class CourseView {
   props:THREE.Object3D[]=[];
   constructor(scene:THREE.Scene,physicsProps:Prop[]) {
     const ground=material('#a9b29a'),asphalt=material('#858982'),paint=material('#e8e5d6'),concrete=material('#b7b6a7');
+    asphalt.polygonOffset=true;asphalt.polygonOffsetFactor=-1;asphalt.polygonOffsetUnits=-4;
+    paint.polygonOffset=true;paint.polygonOffsetFactor=-2;paint.polygonOffsetUnits=-6;
     const base=mesh(new THREE.PlaneGeometry(360,360),ground,scene);base.rotation.x=-Math.PI/2;base.receiveShadow=true;base.castShadow=false;
     const pad=mesh(new THREE.BoxGeometry(100,.035,145),concrete,scene);pad.position.set(0,-.013,5);pad.castShadow=false;
-    this.road(scene,[[-0,-52],[0,-30],[0,-6],[.4,12],[4,27],[15,41],[31,47],[40,39],[36,27],[22,22],[10,28]],5.5,asphalt);
-    this.road(scene,[[-12,-6],[-12,8],[-12,30]],1.5,asphalt);
+    this.practiceLoop(scene,asphalt,paint);
+    this.road(scene,[[10,38],[18,35],[25,35]],4,asphalt);
     // A wide area to practice complete turns without any timed route or checkpoints.
     const turning=mesh(new THREE.CircleGeometry(14,64),asphalt,scene);turning.rotation.x=-Math.PI/2;turning.position.set(25,.009,35);turning.castShadow=false;
     const ring=mesh(new THREE.RingGeometry(12.85,12.91,72),paint,scene);ring.rotation.x=-Math.PI/2;ring.position.set(25,.012,35);ring.castShadow=false;
     for(let z=-46;z<12;z+=6){const dash=mesh(new THREE.BoxGeometry(.09,.005,2),paint,scene);dash.position.set(0,.022,z);dash.castShadow=false;}
     for(const x of [-2.48,2.48]){const line=mesh(new THREE.BoxGeometry(.065,.004,60),paint,scene);line.position.set(x,.020,-19);line.castShadow=false;}
-    for(const x of [-12.66,-11.34]){const line=mesh(new THREE.BoxGeometry(.06,.004,36),paint,scene);line.position.set(x,.020,12);line.castShadow=false;}
+    // The narrow return road is part of the continuous loop.
     const start=mesh(new THREE.BoxGeometry(4.9,.004,.10),paint,scene);start.position.set(0,.023,-29);start.castShadow=false;
     const ramp=rampGeometry(),g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(ramp.vertices,3));g.setIndex(new THREE.BufferAttribute(ramp.indices,1));g.computeVertexNormals();
     mesh(g,asphalt,scene).castShadow=false;
@@ -27,6 +29,8 @@ export class CourseView {
     }
     const c=COURSE.curb;
     const curb=mesh(new THREE.BoxGeometry(c.width,c.height,c.depth),material('#d4d0bd'),scene);curb.position.set(c.x,c.height/2,c.z);
+    this.surfacePatches(scene);
+    this.parkingAndEight(scene,asphalt,paint);
     for(const prop of physicsProps) {
       const group=new THREE.Group();scene.add(group);this.props.push(group);
       const base=mesh(new THREE.BoxGeometry(.38,.05,.38),material('#575952'),group);base.position.y=-.205;
@@ -57,6 +61,69 @@ export class CourseView {
     const roof=mesh(new THREE.BoxGeometry(7,.14,4.6),material('#90998b'),shelter);roof.position.y=2.85;
     const bench=mesh(new THREE.BoxGeometry(4,.12,.52),material('#8e8069'),shelter);bench.position.set(0,.55,1.25);
     for(const x of [-1.7,1.7]){const leg=mesh(new THREE.BoxGeometry(.12,.5,.4),rail,shelter);leg.position.set(x,.25,1.25);}
+  }
+  private practiceLoop(scene:THREE.Scene,asphalt:THREE.Material,paint:THREE.Material){
+    const curve=routeCurve(),vertices:number[]=[],indices:number[]=[],left:THREE.Vector3[]=[],right:THREE.Vector3[]=[];
+    const count=720;
+    for(let i=0;i<=count;i++){
+      const p=curve.getPoint(i/count),t=curve.getTangent(i/count),side=new THREE.Vector3(t.z,0,-t.x).normalize();
+      const width=routeWidth(p.x,p.z);
+      for(const sign of [-1,1]){
+        const x=p.x+side.x*width*.5*sign,z=p.z+side.z*width*.5*sign,y=groundHeight(x,z)+.023;
+        vertices.push(x,y,z);(sign===-1?left:right).push(new THREE.Vector3(x,y+.008,z));
+      }
+      if(i<count){const n=i*2;indices.push(n,n+2,n+1,n+1,n+2,n+3);}
+    }
+    const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));g.setIndex(indices);g.computeVertexNormals();mesh(g,asphalt,scene).castShadow=false;
+    for(const points of [left,right]){
+      const path=new THREE.CatmullRomCurve3(points);
+      mesh(new THREE.TubeGeometry(path,count,.024,4,false),paint,scene).castShadow=false;
+    }
+    // Small painted chevrons show the loop direction without text, timers or checkpoints.
+    for(let i=0;i<16;i++){
+      const t=(i+.35)/16,p=curve.getPointAt(t),dir=curve.getTangentAt(t);p.y=groundHeight(p.x,p.z)+.05;
+      const side=new THREE.Vector3(dir.z,0,-dir.x).normalize(),tip=p.clone().addScaledVector(dir,.5);
+      for(const sign of [-1,1])rod(scene,p.clone().addScaledVector(side,sign*.30).addScaledVector(dir,-.2),tip,.027,paint).castShadow=false;
+    }
+  }
+  private surfacePatches(scene:THREE.Scene){
+    const stone=material('#b9ad94'),grass=material('#859570');
+    for(const patch of SURFACE_PATCHES){
+      const wet=patch.kind==='wet';
+      const mat=new THREE.MeshStandardMaterial({color:wet?'#596b69':patch.kind==='grass'?'#788966':'#a69b86',roughness:wet?.19:.98,metalness:wet?.22:0});
+      const area=mesh(new THREE.PlaneGeometry(patch.width,patch.length),mat,scene);area.rotation.x=-Math.PI/2;area.position.set(patch.x,.036,patch.z);area.castShadow=false;
+      if(wet){
+        for(let i=0;i<9;i++){
+          const puddle=mesh(new THREE.CircleGeometry(1,24),new THREE.MeshStandardMaterial({color:'#79908c',roughness:.08,metalness:.32,transparent:true,opacity:.55}),scene);
+          puddle.rotation.x=-Math.PI/2;puddle.scale.set(.25+(i%3)*.22,.35+(i%4)*.3,1);
+          puddle.position.set(patch.x+Math.sin(i*3.3)*1.5,.038,patch.z+Math.sin(i*1.7)*3.8);puddle.castShadow=false;
+        }
+      }else{
+        const count=patch.kind==='grass'?650:850;
+        const shape=patch.kind==='grass'?new THREE.ConeGeometry(.012,.11,3):new THREE.IcosahedronGeometry(.027,0);
+        const bits=new THREE.InstancedMesh(shape,patch.kind==='grass'?grass:stone,count),o=new THREE.Object3D();
+        bits.receiveShadow=true;
+        for(let i=0;i<count;i++){
+          const a=(Math.sin(i*127.1+31.7)*43758.5453)%1,b=(Math.sin(i*269.5+19.1)*19642.349)%1;
+          o.position.set(patch.x+a*patch.width*.48,.042,patch.z+b*patch.length*.48);
+          o.rotation.set(0,i*2.1,patch.kind==='grass'?Math.sin(i)*.3:0);o.scale.setScalar(.55+(i%7)*.13);
+          if(patch.kind==='gravel')o.scale.y*=.45;
+          o.updateMatrix();bits.setMatrixAt(i,o.matrix);
+        }
+        scene.add(bits);
+      }
+    }
+  }
+  private parkingAndEight(scene:THREE.Scene,asphalt:THREE.Material,paint:THREE.Material){
+    const pad=mesh(new THREE.BoxGeometry(9,.008,7),asphalt,scene);pad.position.set(-7,.025,-43);pad.castShadow=false;
+    for(let i=0;i<4;i++){
+      const x=-9.5+i*1.65;
+      for(const side of [-.65,.65])rod(scene,new THREE.Vector3(x+side,.037,-45),new THREE.Vector3(x+side,.037,-42.3),.025,paint).castShadow=false;
+      rod(scene,new THREE.Vector3(x-.65,.037,-45),new THREE.Vector3(x+.65,.037,-45),.025,paint).castShadow=false;
+    }
+    const points=[];
+    for(let i=0;i<=160;i++){const t=i/160*Math.PI*2;points.push(new THREE.Vector3(25+9*Math.sin(t),.05,35+12*Math.sin(t)*Math.cos(t)));}
+    mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points),200,.025,4,false),paint,scene).castShadow=false;
   }
   private road(scene:THREE.Scene,points:number[][],width:number,material:THREE.Material){
     const curve=new THREE.CatmullRomCurve3(points.map(([x,z])=>new THREE.Vector3(x,.014,z)));

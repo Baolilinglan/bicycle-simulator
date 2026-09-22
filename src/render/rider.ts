@@ -74,7 +74,7 @@ export class Rider {
     this.headMeshes.forEach(m=>m.visible=!firstPerson||b.fallen);
     if(b.fallen){this.ragdoll(b);return;}
     const hip=V(b.bodyX*.55,.97,-.24+b.bodyZ*.25);
-    const shoulder=V(b.bodyX,1.38,.03+b.bodyZ);
+    const shoulder=V(b.bodyX,1.38-b.feedback.bump*.65,.03+b.bodyZ+b.feedback.push);
     this.bone('Hips',hip,hip.clone().add(Y));
     this.bone('Spine',hip,shoulder);
     const neck=shoulder.clone().add(V(0,.04,.01));
@@ -84,7 +84,10 @@ export class Rider {
     for(let i=0;i<2;i++){
       const side=i===0?'L':'R',sign=i===0?1:-1;
       this.chain(side,'leg',hip.clone().add(V(sign*.105,0,0)),feet[i],V(sign*.10,0,1));
-      this.chain(side,'arm',shoulder.clone().add(V(sign*.185,-.012,0)),hands[i],V(sign*.7,-.2,-.5),new THREE.Quaternion().setFromAxisAngle(Y,b.steer));
+      const handQ=new THREE.Quaternion().setFromAxisAngle(Y,b.steer);
+      this.chain(side,'arm',shoulder.clone().add(V(sign*.185,-.012,0)),hands[i],V(sign*.7,-.2,-.5),handQ);
+      const pivot=hands[i].clone().add(V(0,.002,.035).applyQuaternion(handQ));
+      this.bone(`Fingers_${side}`,pivot,pivot.clone().add(Y),handQ.clone().multiply(new THREE.Quaternion().setFromAxisAngle(V(1,0,0),b.brakes[i===0?1:0]*.5)));
     }
   }
   private ragdoll(b:Bicycle){
@@ -102,5 +105,5 @@ export class Rider {
       this.chain(side,'arm',point(0,V(sign*.17,.1,0)),hand,point(arm,V(sign*.2,0,0)).sub(hand),orientation(arm));
     }
   }
-  diagnostics(){return {loaded:this.loaded,bones:this.bones.size,headHidden:this.headMeshes.every(m=>!m.visible)};}
+  diagnostics(){return {loaded:this.loaded,bones:this.bones.size,headHidden:this.headMeshes.every(m=>!m.visible),fingers:['L','R'].map(side=>this.bones.get(`Fingers_${side}` as BoneName)?.quaternion.toArray())};}
 }
