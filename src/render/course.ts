@@ -8,7 +8,7 @@ export class CourseView {
   constructor(scene:THREE.Scene,physicsProps:Prop[]) {
     const ground=material('#a9b29a'),asphalt=material('#858982'),paint=material('#e8e5d6'),concrete=material('#b7b6a7');
     asphalt.polygonOffset=true;asphalt.polygonOffsetFactor=-1;asphalt.polygonOffsetUnits=-4;
-    paint.polygonOffset=true;paint.polygonOffsetFactor=-2;paint.polygonOffsetUnits=-6;
+    paint.polygonOffset=true;paint.polygonOffsetFactor=-3;paint.polygonOffsetUnits=-8;
     const base=mesh(new THREE.PlaneGeometry(360,360),ground,scene);base.rotation.x=-Math.PI/2;base.receiveShadow=true;base.castShadow=false;
     const pad=mesh(new THREE.BoxGeometry(100,.035,145),concrete,scene);pad.position.set(0,-.013,5);pad.castShadow=false;
     this.practiceLoop(scene,asphalt,paint);
@@ -91,10 +91,12 @@ export class CourseView {
     for(const patch of SURFACE_PATCHES){
       const wet=patch.kind==='wet';
       const mat=new THREE.MeshStandardMaterial({color:wet?'#596b69':patch.kind==='grass'?'#788966':'#a69b86',roughness:wet?.19:.98,metalness:wet?.22:0});
+      // Keep thin surface overlays above the road's depth bias at a distance.
+      mat.polygonOffset=true;mat.polygonOffsetFactor=-2;mat.polygonOffsetUnits=-6;
       const area=mesh(new THREE.PlaneGeometry(patch.width,patch.length),mat,scene);area.rotation.x=-Math.PI/2;area.position.set(patch.x,.036,patch.z);area.castShadow=false;
       if(wet){
         for(let i=0;i<9;i++){
-          const puddle=mesh(new THREE.CircleGeometry(1,24),new THREE.MeshStandardMaterial({color:'#79908c',roughness:.08,metalness:.32,transparent:true,opacity:.55}),scene);
+          const puddle=mesh(new THREE.CircleGeometry(1,24),new THREE.MeshStandardMaterial({color:'#79908c',roughness:.08,metalness:.32,transparent:true,opacity:.55,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-7}),scene);
           puddle.rotation.x=-Math.PI/2;puddle.scale.set(.25+(i%3)*.22,.35+(i%4)*.3,1);
           puddle.position.set(patch.x+Math.sin(i*3.3)*1.5,.038,patch.z+Math.sin(i*1.7)*3.8);puddle.castShadow=false;
         }

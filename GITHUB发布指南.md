@@ -1,6 +1,6 @@
 # 上传 GitHub 并发布试玩页
 
-项目已经准备好 GitHub Pages 工作流和相对资源路径。上传后可以得到一个手机、电脑都能访问的公开试玩链接。当前仅在本机运行，尚未上传至你的 GitHub 账号。
+项目已上传至 [Baolilinglan/bicycle-simulator](https://github.com/Baolilinglan/bicycle-simulator)，并通过 GitHub Pages 发布：[在线试玩](https://baolilinglan.github.io/bicycle-simulator/)。现有项目更新请直接使用下文“以后更新”的三条命令；创建新仓库时才需要执行初次配置。
 
 ## 1. 创建一个空仓库
 
