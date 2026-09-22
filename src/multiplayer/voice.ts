@@ -6,12 +6,14 @@ export class RoomVoice {
   private mic:MediaStream|null=null;
   private micSource:MediaStreamAudioSourceNode|null=null;
   private speakers:GainNode|null=null;
+  private meter:AnalyserNode|null=null;
+  private samples=new Float32Array(256);
   private inputs=new Map<string,MediaStreamAudioSourceNode>();
   private receivers=new Map<string,HTMLAudioElement>();
   private outputs=new Map<string,MediaStreamAudioDestinationNode>();
   onChange=()=>{};
   async prepare(host:boolean){
-    if(!this.ctx){this.ctx=new AudioContext();this.speakers=this.ctx.createGain();this.speakers.gain.value=.8;this.speakers.connect(this.ctx.destination);}
+    if(!this.ctx){this.ctx=new AudioContext();this.speakers=this.ctx.createGain();this.speakers.gain.value=.8;this.meter=this.ctx.createAnalyser();this.meter.fftSize=256;this.speakers.connect(this.meter);this.meter.connect(this.ctx.destination);}
     this.host=host;await this.ctx.resume();
   }
   outgoing(id:string){
@@ -58,7 +60,7 @@ export class RoomVoice {
   close(){
     this.disable();for(const id of this.outputs.keys())this.remove(id);
     for(const id of this.inputs.keys())this.removeInput(id);
-    const ctx=this.ctx;this.ctx=null;this.speakers=null;if(ctx)void ctx.close();
+    const ctx=this.ctx;this.ctx=null;this.speakers=null;this.meter=null;if(ctx)void ctx.close();
   }
-  diagnostics(){return {enabled:this.enabled,context:this.ctx?.state,inputs:this.inputs.size,outputs:this.outputs.size,micTracks:this.mic?.getAudioTracks().filter(t=>t.readyState==='live').length||0};}
+  diagnostics(){this.meter?.getFloatTimeDomainData(this.samples);const outputLevel=this.meter?Math.sqrt(this.samples.reduce((sum,x)=>sum+x*x,0)/this.samples.length):0;return {enabled:this.enabled,context:this.ctx?.state,outputLevel,inputs:this.inputs.size,outputs:this.outputs.size,micTracks:this.mic?.getAudioTracks().filter(t=>t.readyState==='live').length||0};}
 }

@@ -7,13 +7,13 @@ const samples=48000*8,wav=Buffer.alloc(44+samples*2);
 wav.write('RIFF',0);wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(48000,24);wav.writeUInt32LE(96000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(samples*2,40);
 for(let i=0;i<samples;i++){const t=i/48000;wav.writeInt16LE(Math.round(5500*(Math.sin(t*2*Math.PI*180)+.35*Math.sin(t*2*Math.PI*360))*(.65+.35*Math.sin(t*2*Math.PI*3))),44+i*2);}
 await fs.writeFile('test-results/fake-voice.wav',wav);
-const browser=await chromium.launch({channel:'msedge',headless:true,args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream',`--use-file-for-fake-audio-capture=${resolve('test-results/fake-voice.wav')}`,'--disable-background-timer-throttling','--disable-renderer-backgrounding']});
+const browser=await chromium.launch({channel:'msedge',headless:true,...(process.env.RELEASE_PROXY?{proxy:{server:process.env.RELEASE_PROXY}}:{}),args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream',`--use-file-for-fake-audio-capture=${resolve('test-results/fake-voice.wav')}`,'--disable-background-timer-throttling','--disable-renderer-backgrounding']});
 const errors=[];const pages=[];
 const diag=page=>page.evaluate(()=>window.bicycleDiagnostics.room());
 async function page(name){
   const context=await browser.newContext({viewport:{width:1280,height:800},permissions:['microphone']});
   const p=await context.newPage();pages.push(p);p.on('pageerror',e=>errors.push(e.message));
-  await p.goto('http://127.0.0.1:5173/?test');await p.waitForFunction(()=>window.bicycleDiagnostics?.ready);
+  await p.goto(process.env.MULTIPLAYER_URL||'http://127.0.0.1:5173/?test');await p.waitForFunction(()=>window.bicycleDiagnostics?.ready);
   await p.locator('#open-multiplayer').click();await p.locator('#mp-name').fill(name);return p;
 }
 async function join(host,guest,count){
@@ -56,11 +56,11 @@ try{
   await host.waitForFunction(()=>window.bicycleDiagnostics.room().members.find(m=>m.name==='骑友一')?.mic);
   assert.equal((await diag(host)).voice.enabled,false,'host need not open a microphone to relay guests');
   assert.equal((await diag(host)).voice.inputs,2);assert.equal((await diag(host)).voice.outputs,2);
-  let receiver;
-  for(let i=0;i<40;i++){receiver=(await two.evaluate(()=>window.bicycleDiagnostics.network()))[0];if(receiver.received>1000&&receiver.energy>0)break;await two.waitForTimeout(250);}
-  if(!(receiver.received>1000&&receiver.energy>0))for(const p of [host,one,two])console.log('Voice diagnostics',JSON.stringify({room:await diag(p),stats:await p.evaluate(()=>window.bicycleDiagnostics.network())}));
-  assert.ok(receiver.received>1000&&receiver.energy>0,'guest audio must reach another guest through the muted host');
-  console.log('Guest voice received through muted host:',{received:receiver.received,energy:receiver.energy});
+  let receiver,outputLevel=0;
+  for(let i=0;i<40;i++){receiver=(await two.evaluate(()=>window.bicycleDiagnostics.network()))[0];outputLevel=(await diag(two)).voice.outputLevel;if(receiver.received>1000&&outputLevel>.0001)break;await two.waitForTimeout(250);}
+  if(!(receiver.received>1000&&outputLevel>.0001))for(const p of [host,one,two])console.log('Voice diagnostics',JSON.stringify({room:await diag(p),stats:await p.evaluate(()=>window.bicycleDiagnostics.network())}));
+  assert.ok(receiver.received>1000&&outputLevel>.0001,'guest audio must reach another guest through the muted host and reach its speaker graph');
+  console.log('Guest voice received through muted host:',{received:receiver.received,outputLevel});
   await two.locator('#mp-chat').fill('三人房间聊天');await two.locator('#mp-chat').press('Enter');
   await one.waitForFunction(()=>window.bicycleDiagnostics.room().chats.some(m=>m.text==='三人房间聊天'));
   await host.screenshot({path:'test-results/multiplayer-room.png'});
@@ -70,7 +70,7 @@ try{
   await one.locator('#mp-mic').click();assert.equal((await diag(one)).voice.micTracks,0);
   await one.locator('#mp-close').click();await one.locator('#start').click();
   await one.waitForFunction(()=>window.bicycleDiagnostics.remotes().count===2);
-  await host.evaluate(()=>window.bicycleTest.place(-.8,-27));
+  await host.evaluate(()=>window.bicycleTest?.place(-.8,-27));
   await one.waitForTimeout(300);
   await one.screenshot({path:'test-results/multiplayer-riding.png'});
   await one.keyboard.press('Escape');await one.locator('#open-multiplayer').click();
