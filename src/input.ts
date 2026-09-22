@@ -51,7 +51,7 @@ export class Input {
     document.addEventListener('keydown',e=>{
       if(this.onRebind){e.preventDefault();if(!e.repeat){const callback=this.onRebind;this.onRebind=null;callback(e.code);}return;}
       if(e.code==='Escape'){e.preventDefault();this.onAction('pause');return;}
-      if(!this.active&&(e.target instanceof HTMLInputElement||e.target instanceof HTMLSelectElement))return;
+      if(e.target instanceof HTMLInputElement||e.target instanceof HTMLSelectElement||e.target instanceof HTMLTextAreaElement||(e.target instanceof HTMLElement&&e.target.isContentEditable))return;
       if(Object.values(this.settings.bindings).includes(e.code))e.preventDefault();
       if(!e.repeat)this.press(e.code);
     });

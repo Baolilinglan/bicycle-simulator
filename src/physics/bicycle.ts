@@ -90,7 +90,7 @@ export class Bicycle {
         .setRotation(new Quaternion().setFromAxisAngle(new Vector3(0,0,1),Math.PI/2))
         .setTranslation(side*TRAINING.spread,TRAINING.height,TRAINING.z).setDensity(0).setFriction(.5),this.body));
   }
-  reset(atStart = true) {
+  reset(atStart = true,spawn?:{x:number;z:number}) {
     const p = vec(this.body.translation());
     const q = quat(this.body.rotation());
     const forward = new Vector3(0,0,1).applyQuaternion(q);
@@ -104,7 +104,7 @@ export class Bicycle {
       const hit = this.world.castRay(new RAPIER.Ray({x:p.x,y:p.y+4,z:p.z},{x:0,y:-1,z:0}),20,true,undefined,undefined,undefined,this.body);
       if(hit) y = p.y + 4 - hit.timeOfImpact + 0.03;
     }
-    this.body.setTranslation(atStart ? {x:0,y:0.03,z:-32} : {x:p.x,y,z:p.z},true);
+    this.body.setTranslation(atStart ? {x:spawn?.x??0,y:0.03,z:spawn?.z??-32} : {x:p.x,y,z:p.z},true);
     this.body.setRotation(rot,true);
     this.body.setLinvel({x:0,y:0,z:0},true); this.body.setAngvel({x:0,y:0,z:0},true);
     this.body.resetForces(true); this.body.resetTorques(true);

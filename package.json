@@ -7,14 +7,15 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "tsx --test tests/physics.test.ts",
+    "test": "tsx --test tests/physics.test.ts tests/network.test.ts",
     "test:browser": "node tests/browser.mjs",
     "test:mobile": "node tests/mobile.mjs",
     "model:optimize": "gltf-transform optimize assets/rider/rider.raw.glb public/models/rider.glb --compress meshopt --flatten false --join false --simplify false --palette false",
     "model:validate": "gltf-transform validate public/models/rider.glb",
     "test:production": "node tests/production.mjs",
     "test:comfort": "node tests/comfort.mjs",
-    "test:practice": "node tests/practice.mjs"
+    "test:practice": "node tests/practice.mjs",
+    "test:multiplayer": "node tests/multiplayer.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.0",

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import restPose from '../../assets/rider/rest-pose.json';
-import type { Bicycle } from '../physics/bicycle';
+import type { RidePose } from './ride-pose';
 import { quat, vec } from '../physics/world';
 
 type BoneName = keyof typeof restPose;
@@ -67,7 +67,7 @@ export class Rider {
     this.bone(upper,a,joint);this.bone(lower,joint,end);
     this.bone(extremity,end,end.clone().add(V(0,0,.1)),endQ);
   }
-  update(b:Bicycle,firstPerson:boolean,feet:THREE.Vector3[],hands:THREE.Vector3[]){
+  update(b:RidePose,firstPerson:boolean,feet:THREE.Vector3[],hands:THREE.Vector3[]){
     if(!this.loaded)return;
     this.root.updateWorldMatrix(true,true);
     this.inverse.copy(this.root.matrixWorld).invert();this.root.getWorldQuaternion(this.baseQ);
@@ -90,7 +90,7 @@ export class Rider {
       this.bone(`Fingers_${side}`,pivot,pivot.clone().add(Y),handQ.clone().multiply(new THREE.Quaternion().setFromAxisAngle(V(1,0,0),b.brakes[i===0?1:0]*.5)));
     }
   }
-  private ragdoll(b:Bicycle){
+  private ragdoll(b:RidePose){
     const point=(index:number,p:THREE.Vector3)=>p.applyQuaternion(quat(b.ragdoll[index].rotation())).add(vec(b.ragdoll[index].translation())).applyMatrix4(this.inverse);
     const orientation=(index:number)=>this.baseQ.clone().invert().multiply(quat(b.ragdoll[index].rotation()));
     const hip=point(2,V(0,0,0)),shoulder=point(0,V(0,.18,0)),head=point(1,V(0,0,0));
@@ -106,4 +106,5 @@ export class Rider {
     }
   }
   diagnostics(){return {loaded:this.loaded,bones:this.bones.size,headHidden:this.headMeshes.every(m=>!m.visible),fingers:['L','R'].map(side=>this.bones.get(`Fingers_${side}` as BoneName)?.quaternion.toArray())};}
+  dispose(){const materials=new Set<THREE.Material>();this.root.traverse(o=>{if(o instanceof THREE.Mesh){(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>materials.add(m));if(o instanceof THREE.SkinnedMesh)o.skeleton.dispose();}});materials.forEach(m=>m.dispose());}
 }

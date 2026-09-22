@@ -1,10 +1,15 @@
 import './ui/interface.css';
+import './ui/multiplayer.css';
 import { makeWorld, STEP, groundHeight } from './physics/world';
 import { Bicycle, type RideInput } from './physics/bicycle';
 import { View } from './render/app';
 import { Input, readSettings, saveSettings } from './input';
 import { Menu } from './ui/menu';
 import { RideAudio } from './audio';
+import { RideRoom } from './multiplayer/room';
+import { captureFrame } from './multiplayer/protocol';
+import { RemoteRiders } from './render/remote-riders';
+import { MultiplayerUI } from './ui/multiplayer';
 
 async function boot(){
   const canvas=document.querySelector<HTMLCanvasElement>('#game')!;
@@ -12,6 +17,7 @@ async function boot(){
   const {world,props}=await makeWorld();
   const bike=new Bicycle(world,settings.difficulty),view=new View(canvas,props),audio=new RideAudio();
   await view.bicycle.rider.ready;
+  const room=new RideRoom(),multiplayer=new MultiplayerUI(room,menu),remotes=new RemoteRiders(view.scene);
   let accumulator=0,last=performance.now(),fps=60,pausedByContext=false;
   // Settle onto a planted left foot before the first frame; there is no hidden stand.
   for(let i=0;i<180;i++){bike.step(input.read());world.step();bike.afterStep();}
@@ -21,9 +27,15 @@ async function boot(){
   menu.onSettingsChange=()=>audio.setMusic(settings,menu.playing);
   menu.onDifficulty=()=>{bike.setDifficulty(settings.difficulty);input.clear();input.steer=0;accumulator=0;};
   audio.onMusicError=()=>menu.toast('音乐暂时无法播放，骑行仍可继续。');
-  const reset=(start:boolean)=>{bike.reset(start);input.steer=0;input.clear();input.look=.40;accumulator=0;};
+  const reset=(start:boolean)=>{
+    const slot=[...room.members.keys()].indexOf(room.self);
+    bike.reset(start,slot>=0?{x:(slot%2)*1.6-.8,z:-32-Math.floor(slot/2)*2.3}:undefined);
+    input.steer=0;input.clear();input.look=.40;accumulator=0;
+  };
   menu.onReset=reset;
+  room.onEnter=()=>{menu.setDifficulty(room.difficulty);reset(true);};
   input.onAction=action=>{
+    if(multiplayer.opened){if(action==='pause')multiplayer.close();return;}
     if(action==='pause'){if(menu.helpOpen)menu.dismissHelp();else menu.pause();return;}
     if(action==='help'){menu.toggleHelp();return;}
     if(action==='leftFoot')bike.toggleFoot(0);
@@ -46,11 +58,13 @@ async function boot(){
     }
     audio.update(bike,settings.volume,menu.playing,settings.pedalAssist);
     menu.updateDebug(bike,fps);
+    if(room.role!=='none')room.tick(captureFrame(bike,!menu.playing),now);multiplayer.update();
+    remotes.update(room.members,room.self,room.difficulty,dt);
     if(!pausedByContext)view.draw(bike,props,settings.camera,input.lookAngle(),menu.menuVisible,dt);
   }
   requestAnimationFrame(animate);
   // Read-only diagnostics in ordinary builds. Deterministic stepping only under explicit QA query.
-  Object.assign(window,{bicycleDiagnostics:{snapshot:()=>bike.snapshot(),renderer:()=>({...view.renderer.info.render}),rider:()=>view.bicycle.rider.diagnostics(),input:()=>({...input.read(),touch:input.touchMode}),music:()=>audio.diagnostics(),trainingVisible:()=>view.bicycle.training.visible,ready:true}});
+  Object.assign(window,{bicycleDiagnostics:{snapshot:()=>bike.snapshot(),renderer:()=>({...view.renderer.info.render}),rider:()=>view.bicycle.rider.diagnostics(),input:()=>({...input.read(),touch:input.touchMode}),music:()=>audio.diagnostics(),trainingVisible:()=>view.bicycle.training.visible,room:()=>room.diagnostics(),remotes:()=>remotes.diagnostics(),network:()=>room.stats(),ready:true}});
   if(new URLSearchParams(location.search).has('test')){
     Object.assign(window,{bicycleTest:{
       snapshot:()=>bike.snapshot(),reset:(start=true)=>reset(start),pause:()=>menu.pause(),

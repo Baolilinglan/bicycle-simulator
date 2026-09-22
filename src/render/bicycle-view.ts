@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Bicycle, BIKE, TRAINING } from '../physics/bicycle';
 import { quat, vec } from '../physics/world';
 import { Rider } from './rider';
+import type { RidePose } from './ride-pose';
 
 const mat = (color:string, roughness=0.7, metalness=0) => new THREE.MeshStandardMaterial({color,roughness,metalness});
 const palette = {frame:mat('#476e64',0.38,0.35),rubber:mat('#292d2a'),metal:mat('#bdc1b6',0.3,0.7),
@@ -26,6 +27,7 @@ export class BicycleView {
   supportWheels:THREE.Group[]=[];
   brakeLevers:THREE.Group[]=[];
   rider:Rider;
+  private accents:THREE.Material[]=[];
   constructor(public scene:THREE.Scene) {
     scene.add(this.root);
     const f=palette.frame,m=palette.metal,d=palette.dark;
@@ -87,7 +89,7 @@ export class BicycleView {
     }
     const valve=mesh(new THREE.BoxGeometry(.018,.02,.036),palette.leather,group);valve.position.z=.30;
   }
-  update(bike:Bicycle,firstPerson:boolean) {
+  update(bike:RidePose,firstPerson:boolean) {
     this.root.position.copy(vec(bike.body.translation()));this.root.quaternion.copy(quat(bike.body.rotation()));
     this.front.rotation.y=bike.steer;
     this.brakeLevers.forEach((lever,i)=>lever.rotation.y=(i===0?1:-1)*bike.brakes[i===0?1:0]*.5);
@@ -113,4 +115,13 @@ export class BicycleView {
     this.rider.update(bike,firstPerson,feet,hands);
   }
   headPosition(bike:Bicycle) {return bike.localToWorld(v(bike.bodyX,1.61-bike.feedback.bump*.35,.18+bike.bodyZ+bike.feedback.push));}
+  setAccent(color:string){
+    const accent=palette.frame.clone();accent.color.set(color);this.accents.push(accent);
+    this.root.traverse(o=>{if(o instanceof THREE.Mesh&&o.material===palette.frame)o.material=accent;});
+  }
+  dispose(){
+    this.root.removeFromParent();
+    const release=()=>{const geometries=new Set<THREE.BufferGeometry>();this.root.traverse(o=>{if(o instanceof THREE.Mesh)geometries.add(o.geometry);});geometries.forEach(g=>g.dispose());this.accents.forEach(m=>m.dispose());this.rider.dispose();};
+    void this.rider.ready.then(release,release);
+  }
 }

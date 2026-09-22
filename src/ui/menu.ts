@@ -114,6 +114,7 @@ export class Menu {
     this.renderBindings();this.updateSettings();
   }
   ready(){const b=this.root.querySelector<HTMLButtonElement>('#start')!;b.disabled=false;b.querySelector('span')!.textContent='开始骑行';}
+  setDifficulty(value:Difficulty){this.settings.difficulty=value;this.onDifficulty();this.updateSettings();}
   private click(id:string,fn:()=>void){this.root.querySelector('#'+id)!.addEventListener('click',fn);}
   start(){
     this.panel(null);this.started=true;this.menuVisible=false;
